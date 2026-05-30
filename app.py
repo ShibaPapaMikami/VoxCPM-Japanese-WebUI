@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import json
 import logging
 import subprocess
 import numpy as np
@@ -685,7 +686,20 @@ class VoxCPMDemo:
 
 def create_demo_interface(demo: VoxCPMDemo):
     gr.set_static_paths(paths=[Path.cwd().absolute() / "assets"])
-    current_output_dir = {"path": (Path.cwd() / "outputs").resolve()}
+    settings_path = Path.cwd() / ".jpvoxcpm_settings.json"
+    initial_output_dir = (Path.cwd() / "outputs").resolve()
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        saved_output_dir = (settings.get("output_dir") or "").strip()
+        if saved_output_dir:
+            expanded = os.path.expandvars(os.path.expanduser(saved_output_dir))
+            saved_path = Path(expanded)
+            if not saved_path.is_absolute():
+                saved_path = Path.cwd() / saved_path
+            initial_output_dir = saved_path.resolve()
+    except Exception:
+        pass
+    current_output_dir = {"path": initial_output_dir}
 
     def _list_voice_design_history():
         output_dir = _output_dir(create=False)
@@ -726,8 +740,16 @@ def create_demo_interface(demo: VoxCPMDemo):
                 raise ValueError("指定されたパスはフォルダではありません。")
             current_output_dir["path"] = output_dir
             folder_text = str(output_dir)
+            settings_message = ""
+            try:
+                settings_path.write_text(
+                    json.dumps({"output_dir": folder_text}, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+            except Exception as settings_error:
+                settings_message = f"\n\n設定ファイルへの保存はできませんでした: {settings_error}"
             history_update = _history_dropdown_update()
-            message = f"保存先フォルダを変更しました: {folder_text}"
+            message = f"保存先フォルダを変更しました: {folder_text}{settings_message}"
             return (
                 gr.update(value=folder_text),
                 gr.update(value=folder_text),

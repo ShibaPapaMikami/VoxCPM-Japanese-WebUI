@@ -8,5 +8,6 @@ outputs/
 app_local.py
 .uv-cache/
 .codex-gitconfig
+.jpvoxcpm_settings.json
 *.log
 VoxCPM_WebUI.exe
