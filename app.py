@@ -690,16 +690,34 @@ def create_demo_interface(demo: VoxCPMDemo):
         if not output_dir.exists():
             return []
         choices = []
-        for path in sorted(output_dir.glob("voice_design_*.wav"), key=lambda p: p.stat().st_mtime, reverse=True)[:30]:
+        for path in sorted(output_dir.glob("voice_design_*.wav"), key=lambda p: p.stat().st_mtime, reverse=True)[:50]:
             timestamp = datetime.fromtimestamp(path.stat().st_mtime).strftime("%m/%d %H:%M")
             choices.append((f"{timestamp} - {path.name}", str(path)))
         return choices
 
-    def _save_wav_for_download(sr: int, wav_np: np.ndarray, prefix: str) -> str:
+    def _output_dir() -> Path:
         output_dir = Path.cwd() / "outputs"
         output_dir.mkdir(parents=True, exist_ok=True)
+        return output_dir
+
+    def _sanitize_filename(name: str) -> str:
+        name = (name or "").strip()
+        if not name:
+            return ""
+        name = re.sub(r"[\\/:*?\"<>|]+", "_", name)
+        name = re.sub(r"\s+", "_", name).strip("._ ")
+        return name[:80]
+
+    def _save_wav_for_download(sr: int, wav_np: np.ndarray, prefix: str, filename_hint: str = "") -> str:
+        output_dir = _output_dir()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_path = output_dir / f"{prefix}_{timestamp}_{uuid4().hex[:8]}.wav"
+        custom_name = _sanitize_filename(filename_hint)
+        if custom_name:
+            output_path = output_dir / f"{prefix}_{custom_name}.wav"
+            if output_path.exists():
+                output_path = output_dir / f"{prefix}_{custom_name}_{timestamp}.wav"
+        else:
+            output_path = output_dir / f"{prefix}_{timestamp}_{uuid4().hex[:8]}.wav"
         processing_utils.audio_to_file(sr, np.asarray(wav_np), str(output_path), format="wav")
         logger.info(f"Saved generated WAV for download: {output_path}")
         return str(output_path)
@@ -710,6 +728,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         intonation_instruction: str,
         word_accent_instruction: str,
         target_language: str,
+        filename_hint: str,
         cfg_value: float,
         do_normalize: bool,
         dit_steps: int,
@@ -727,12 +746,27 @@ def create_demo_interface(demo: VoxCPMDemo):
             denoise=False,
             inference_timesteps=int(dit_steps),
         )
-        output_path = _save_wav_for_download(sr, wav_np, "voice_design")
+        output_path = _save_wav_for_download(sr, wav_np, "voice_design", filename_hint)
         return (sr, wav_np), output_path, gr.update(choices=_list_voice_design_history(), value=output_path)
 
     def _refresh_voice_design_history():
         choices = _list_voice_design_history()
         return gr.update(choices=choices, value=choices[0][1] if choices else None)
+
+    def _delete_voice_design_history(history_wav: Optional[str]):
+        if not history_wav:
+            return gr.update(), "削除する履歴ファイルを選んでください。"
+        output_dir = _output_dir().resolve()
+        target = Path(history_wav).resolve()
+        if output_dir not in target.parents:
+            raise ValueError("outputsフォルダ内の履歴ファイルだけ削除できます。")
+        if target.exists():
+            target.unlink()
+            message = f"削除しました: {target.name}"
+        else:
+            message = "ファイルは既に存在しません。履歴を更新しました。"
+        choices = _list_voice_design_history()
+        return gr.update(choices=choices, value=choices[0][1] if choices else None), message
 
     def _resolve_reference_audio(
         uploaded_ref: Optional[str],
@@ -749,6 +783,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         history_wav: Optional[str],
         text: str,
         target_language: str,
+        filename_hint: str,
         cfg_value: float,
         do_normalize: bool,
         dit_steps: int,
@@ -768,7 +803,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             denoise=False,
             inference_timesteps=int(dit_steps),
         )
-        return (sr, wav_np), _save_wav_for_download(sr, wav_np, "voice_design_reuse")
+        return (sr, wav_np), _save_wav_for_download(sr, wav_np, "voice_design_reuse", filename_hint)
 
     def _generate_clone(
         text: str,
@@ -778,6 +813,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         ref_wav: Optional[str],
         history_wav: Optional[str],
         target_language: str,
+        filename_hint: str,
         cfg_value: float,
         do_normalize: bool,
         denoise: bool,
@@ -797,7 +833,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             denoise=denoise,
             inference_timesteps=int(dit_steps),
         )
-        return (sr, wav_np), _save_wav_for_download(sr, wav_np, "voice_clone")
+        return (sr, wav_np), _save_wav_for_download(sr, wav_np, "voice_clone", filename_hint)
 
     def _generate_high_fidelity_clone(
         text: str,
@@ -808,6 +844,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         intonation_instruction: str,
         word_accent_instruction: str,
         target_language: str,
+        filename_hint: str,
         cfg_value: float,
         do_normalize: bool,
         denoise: bool,
@@ -830,7 +867,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             inference_timesteps=int(dit_steps),
         )
         prefix = "high_fidelity_safe_clone" if prevent_leading_mix else "high_fidelity_clone"
-        return (sr, wav_np), _save_wav_for_download(sr, wav_np, prefix)
+        return (sr, wav_np), _save_wav_for_download(sr, wav_np, prefix, filename_hint)
 
     def _transcribe_reference(audio_path: Optional[str], history_wav: Optional[str] = None):
         try:
@@ -1078,6 +1115,12 @@ def create_demo_interface(demo: VoxCPMDemo):
                             label="読み上げテキスト",
                             lines=5,
                         )
+                        design_filename = gr.Textbox(
+                            value="",
+                            label="保存ファイル名（任意）",
+                            placeholder="例: calm_male_narration",
+                            lines=1,
+                        )
                         _add_prosody_controls(design_text)
                         _, design_normalize, design_cfg, design_steps = _advanced_settings(
                             include_denoise=False,
@@ -1098,6 +1141,11 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 "声のデザインで生成した音声を参照音声として使い、"
                                 "同じ声質に近い声で別のセリフを生成します。"
                             )
+                            design_output_dir = gr.Textbox(
+                                value=str(_output_dir()),
+                                label="保存先フォルダ",
+                                interactive=False,
+                            )
                             design_history = gr.Dropdown(
                                 choices=_list_voice_design_history(),
                                 value=(_list_voice_design_history()[0][1] if _list_voice_design_history() else None),
@@ -1105,10 +1153,18 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 info="新しく声を生成すると、この履歴に追加されます。",
                             )
                             design_history_refresh = gr.Button("履歴を更新", variant="secondary", size="sm")
+                            design_history_delete = gr.Button("選択した履歴を削除", variant="stop", size="sm")
+                            design_history_status = gr.Markdown("")
                             design_reuse_text = gr.Textbox(
                                 value="この声で、別のセリフも読んでみます。",
                                 label="この声で読み上げるテキスト",
                                 lines=4,
+                            )
+                            design_reuse_filename = gr.Textbox(
+                                value="",
+                                label="保存ファイル名（任意）",
+                                placeholder="例: calm_male_line2",
+                                lines=1,
                             )
                             design_reuse_btn = gr.Button("履歴の声で生成", variant="primary")
                             design_reuse_output = gr.Audio(label="履歴の声で生成された音声")
@@ -1122,6 +1178,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         design_intonation,
                         design_word_accent,
                         design_language,
+                        design_filename,
                         design_cfg,
                         design_normalize,
                         design_steps,
@@ -1136,12 +1193,19 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[design_history],
                     show_progress=False,
                 )
+                design_history_delete.click(
+                    fn=_delete_voice_design_history,
+                    inputs=[design_history],
+                    outputs=[design_history, design_history_status],
+                    show_progress=False,
+                )
                 design_reuse_btn.click(
                     fn=_generate_from_design_history,
                     inputs=[
                         design_history,
                         design_reuse_text,
                         design_language,
+                        design_reuse_filename,
                         design_cfg,
                         design_normalize,
                         design_steps,
@@ -1181,12 +1245,25 @@ def create_demo_interface(demo: VoxCPMDemo):
                             label="読み上げテキスト",
                             lines=5,
                         )
+                        clone_filename = gr.Textbox(
+                            value="",
+                            label="保存ファイル名（任意）",
+                            placeholder="例: cloned_voice_sample",
+                            lines=1,
+                        )
                         _add_prosody_controls(clone_text)
                         clone_denoise, clone_normalize, clone_cfg, clone_steps = _advanced_settings(include_denoise=True)
                         clone_btn = gr.Button("この声で生成", variant="primary", size="lg")
                     with gr.Column():
                         clone_output = gr.Audio(label="生成された音声")
                         clone_file = gr.File(label="WAVダウンロード", interactive=False)
+                        clone_output_dir = gr.Textbox(
+                            value=str(_output_dir()),
+                            label="保存先フォルダ",
+                            interactive=False,
+                        )
+                        clone_history_delete = gr.Button("選択した履歴を削除", variant="stop", size="sm")
+                        clone_history_status = gr.Markdown("")
                         gr.Markdown(
                             "**使い方**\n\n"
                             "1. クローンしたい声の音声をアップロードするか、声のデザイン履歴から選びます。\n"
@@ -1204,6 +1281,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         clone_ref,
                         clone_history,
                         clone_language,
+                        clone_filename,
                         clone_cfg,
                         clone_normalize,
                         clone_denoise,
@@ -1217,6 +1295,12 @@ def create_demo_interface(demo: VoxCPMDemo):
                     fn=_refresh_voice_design_history,
                     inputs=[],
                     outputs=[clone_history],
+                    show_progress=False,
+                )
+                clone_history_delete.click(
+                    fn=_delete_voice_design_history,
+                    inputs=[clone_history],
+                    outputs=[clone_history, clone_history_status],
                     show_progress=False,
                 )
 
@@ -1263,12 +1347,25 @@ def create_demo_interface(demo: VoxCPMDemo):
                             label="続けて読み上げるテキスト",
                             lines=5,
                         )
+                        hifi_filename = gr.Textbox(
+                            value="",
+                            label="保存ファイル名（任意）",
+                            placeholder="例: high_fidelity_clone_sample",
+                            lines=1,
+                        )
                         _add_prosody_controls(hifi_text)
                         hifi_denoise, hifi_normalize, hifi_cfg, hifi_steps = _advanced_settings(include_denoise=True)
                         hifi_btn = gr.Button("高精度クローンで生成", variant="primary", size="lg")
                     with gr.Column():
                         hifi_output = gr.Audio(label="生成された音声")
                         hifi_file = gr.File(label="WAVダウンロード", interactive=False)
+                        hifi_output_dir = gr.Textbox(
+                            value=str(_output_dir()),
+                            label="保存先フォルダ",
+                            interactive=False,
+                        )
+                        hifi_history_delete = gr.Button("選択した履歴を削除", variant="stop", size="sm")
+                        hifi_history_status = gr.Markdown("")
                         gr.Markdown(
                             "**使い方**\n\n"
                             "1. 参照音声をアップロードするか、声のデザイン履歴から選びます。\n"
@@ -1293,6 +1390,12 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[hifi_history],
                     show_progress=False,
                 )
+                hifi_history_delete.click(
+                    fn=_delete_voice_design_history,
+                    inputs=[hifi_history],
+                    outputs=[hifi_history, hifi_history_status],
+                    show_progress=False,
+                )
                 hifi_btn.click(
                     fn=_generate_high_fidelity_clone,
                     inputs=[
@@ -1304,6 +1407,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         hifi_intonation,
                         hifi_word_accent,
                         hifi_language,
+                        hifi_filename,
                         hifi_cfg,
                         hifi_normalize,
                         hifi_denoise,
