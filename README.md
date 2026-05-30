@@ -68,11 +68,15 @@ powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda
 
 同じLAN内の別端末からアクセスする場合は、起動PCのIPアドレスを使います。
 
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda.ps1 -HostAddress 0.0.0.0
+```
+
 ```text
 http://<起動PCのIPアドレス>:8808/
 ```
 
-必要に応じてWindowsファイアウォールで8808番ポートを許可します。
+必要に応じてWindowsファイアウォールで8808番ポートを許可します。既定ではプライベートネットワークだけを許可します。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\allow_firewall_8808.ps1

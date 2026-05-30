@@ -33,11 +33,15 @@ http://127.0.0.1:8808/
 
 同じLAN内の別端末から使う場合は、起動PCのIPアドレスを使います。
 
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda.ps1 -HostAddress 0.0.0.0
+```
+
 ```text
 http://<起動PCのIPアドレス>:8808/
 ```
 
-必要ならWindowsファイアウォールを許可します。
+必要ならWindowsファイアウォールを許可します。既定ではプライベートネットワークだけを許可します。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\allow_firewall_8808.ps1

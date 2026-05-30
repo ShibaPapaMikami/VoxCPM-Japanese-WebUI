@@ -1,5 +1,6 @@
 param(
     [int]$Port = 8808,
+    [string]$HostAddress = "127.0.0.1",
     [string]$Device = "cuda",
     [switch]$SkipSetup,
     [switch]$NoBrowser,
@@ -30,6 +31,7 @@ if (!$SkipSetup) {
 
 $launchArgs = @{
     Port = $Port
+    HostAddress = $HostAddress
     Device = $Device
 }
 

@@ -1243,7 +1243,7 @@ def create_demo_interface(demo: VoxCPMDemo):
     return interface
 
 def run_demo(
-    server_name: str = "0.0.0.0",
+    server_name: str = "127.0.0.1",
     server_port: int = 8808,
     show_error: bool = True,
     model_id: str = "openbmb/VoxCPM2",
@@ -1272,6 +1272,12 @@ if __name__ == "__main__":
     )
     parser.add_argument("--port", type=int, default=8808, help="Server port")
     parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Server host. Use 127.0.0.1 for local-only access or 0.0.0.0 for LAN access.",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default="auto",
@@ -1285,6 +1291,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     run_demo(
         model_id=args.model_id,
+        server_name=args.host,
         server_port=args.port,
         device=args.device,
         load_denoiser=not args.no_denoiser,

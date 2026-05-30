@@ -1,5 +1,6 @@
 param(
     [int]$Port = 8808,
+    [string]$HostAddress = "127.0.0.1",
     [string]$Device = "cuda",
     [string]$ModelId = "",
     [switch]$NoBrowser,
@@ -42,6 +43,7 @@ $Url = "http://127.0.0.1:$Port"
 $AppArgs = @(
     $App,
     "--model-id", $ModelId,
+    "--host", $HostAddress,
     "--port", "$Port",
     "--device", $Device
 )
@@ -52,6 +54,7 @@ if (!$LoadDenoiser) {
 
 Write-Host "VoxCPM Web UI"
 Write-Host "  URL:    $Url"
+Write-Host "  Host:   $HostAddress"
 Write-Host "  Model:  $ModelId"
 Write-Host "  Device: $Device"
 
