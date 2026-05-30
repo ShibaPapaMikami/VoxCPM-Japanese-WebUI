@@ -13,6 +13,19 @@ from pathlib import Path
 
 DEFAULT_HF_MODEL_ID = "openbmb/VoxCPM2"
 
+
+def _configure_stdio_encoding():
+    """Keep argparse/help output usable on Windows consoles with legacy encodings."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            pass
+
+
 # -----------------------------
 # Validators
 # -----------------------------
@@ -624,6 +637,7 @@ def _dispatch_legacy(args, parser):
 
 
 def main():
+    _configure_stdio_encoding()
     parser = _build_parser()
     args = parser.parse_args()
 

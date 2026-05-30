@@ -11,6 +11,27 @@ from .model.voxcpm2 import VoxCPM2Model
 from .model.utils import next_and_close
 
 
+def _use_system_truststore_if_available() -> None:
+    """Prefer OS certificate roots when truststore is installed.
+
+    This helps Windows and corporate-network setups where Python's bundled
+    certifi roots cannot validate the same HTTPS endpoints that native tools can.
+    """
+    disabled = os.environ.get("VOXCPM_DISABLE_TRUSTSTORE", "").strip().lower()
+    if disabled in {"1", "true", "yes", "on"}:
+        return
+
+    try:
+        import truststore
+    except ImportError:
+        return
+
+    try:
+        truststore.inject_into_ssl()
+    except Exception as exc:
+        print(f"Warning: failed to activate truststore: {exc}", file=sys.stderr)
+
+
 class VoxCPM:
     def __init__(
         self,
@@ -153,6 +174,7 @@ class VoxCPM:
         if os.path.isdir(repo_id):
             local_path = repo_id
         else:
+            _use_system_truststore_if_available()
             # Otherwise, try from_pretrained (Hub); exit on failure
             local_path = snapshot_download(
                 repo_id=repo_id,

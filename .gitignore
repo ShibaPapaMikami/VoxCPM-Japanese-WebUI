@@ -3,5 +3,10 @@ launch.json
 __pycache__
 voxcpm.egg-info
 .DS_Store
-./pretrained_models/
+pretrained_models/
+outputs/
 app_local.py
+.uv-cache/
+.codex-gitconfig
+*.log
+VoxCPM_WebUI.exe
