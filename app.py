@@ -734,6 +734,17 @@ def create_demo_interface(demo: VoxCPMDemo):
         choices = _list_voice_design_history()
         return gr.update(choices=choices, value=choices[0][1] if choices else None)
 
+    def _resolve_reference_audio(
+        uploaded_ref: Optional[str],
+        history_ref: Optional[str],
+        feature_label: str,
+    ) -> str:
+        if uploaded_ref:
+            return uploaded_ref
+        if history_ref:
+            return history_ref
+        raise ValueError(f"{feature_label}には参照音声をアップロードするか、声のデザイン履歴から選んでください。")
+
     def _generate_from_design_history(
         history_wav: Optional[str],
         text: str,
@@ -765,21 +776,21 @@ def create_demo_interface(demo: VoxCPMDemo):
         intonation_instruction: str,
         word_accent_instruction: str,
         ref_wav: Optional[str],
+        history_wav: Optional[str],
         target_language: str,
         cfg_value: float,
         do_normalize: bool,
         denoise: bool,
         dit_steps: int,
     ):
-        if not ref_wav:
-            raise ValueError("声のクローンには参照音声を指定してください。")
+        ref_source = _resolve_reference_audio(ref_wav, history_wav, "声のクローン")
         sr, wav_np = demo.generate_tts_audio(
             text_input=text,
             control_instruction=control_instruction,
             intonation_instruction=intonation_instruction,
             word_accent_instruction=word_accent_instruction,
             target_language=target_language,
-            reference_wav_path_input=ref_wav,
+            reference_wav_path_input=ref_source,
             prompt_text="",
             cfg_value_input=cfg_value,
             do_normalize=do_normalize,
@@ -791,6 +802,7 @@ def create_demo_interface(demo: VoxCPMDemo):
     def _generate_high_fidelity_clone(
         text: str,
         ref_wav: Optional[str],
+        history_wav: Optional[str],
         prompt_text_value: str,
         prevent_leading_mix: bool,
         intonation_instruction: str,
@@ -801,8 +813,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         denoise: bool,
         dit_steps: int,
     ):
-        if not ref_wav:
-            raise ValueError("高精度クローンには参照音声を指定してください。")
+        ref_source = _resolve_reference_audio(ref_wav, history_wav, "高精度クローン")
         if not prevent_leading_mix and not (prompt_text_value or "").strip():
             raise ValueError("文字起こしを使う場合は、参照音声の文字起こしが必要です。")
         sr, wav_np = demo.generate_tts_audio(
@@ -811,7 +822,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             intonation_instruction=intonation_instruction,
             word_accent_instruction=word_accent_instruction,
             target_language=target_language,
-            reference_wav_path_input=ref_wav,
+            reference_wav_path_input=ref_source,
             prompt_text="" if prevent_leading_mix else prompt_text_value,
             cfg_value_input=cfg_value,
             do_normalize=do_normalize,
@@ -821,12 +832,14 @@ def create_demo_interface(demo: VoxCPMDemo):
         prefix = "high_fidelity_safe_clone" if prevent_leading_mix else "high_fidelity_clone"
         return (sr, wav_np), _save_wav_for_download(sr, wav_np, prefix)
 
-    def _transcribe_reference(audio_path: Optional[str]):
-        if not audio_path:
-            return gr.update(), "参照音声を指定してから、自動文字起こしを試してください。"
+    def _transcribe_reference(audio_path: Optional[str], history_wav: Optional[str] = None):
+        try:
+            ref_source = _resolve_reference_audio(audio_path, history_wav, "自動文字起こし")
+        except ValueError:
+            return gr.update(), "参照音声をアップロードするか、声のデザイン履歴から選んでから、自動文字起こしを試してください。"
         try:
             logger.info("Running ASR on reference audio...")
-            asr_text = demo.prompt_wav_recognition(audio_path)
+            asr_text = demo.prompt_wav_recognition(ref_source)
             logger.info(f"ASR result: {asr_text[:60]}...")
             asr_text = (asr_text or "").strip()
             if not asr_text:
@@ -1147,6 +1160,13 @@ def create_demo_interface(demo: VoxCPMDemo):
                             type="filepath",
                             label="参照音声",
                         )
+                        clone_history = gr.Dropdown(
+                            choices=_list_voice_design_history(),
+                            value=None,
+                            label="声のデザイン履歴から選択（任意）",
+                            info="参照音声をアップロードしていない場合、この履歴の声を使います。",
+                        )
+                        clone_history_refresh = gr.Button("履歴を更新", variant="secondary", size="sm")
                         clone_language = _language_dropdown()
                         clone_control = gr.Textbox(
                             value="自然で聞き取りやすく、落ち着いた話し方",
@@ -1169,7 +1189,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         clone_file = gr.File(label="WAVダウンロード", interactive=False)
                         gr.Markdown(
                             "**使い方**\n\n"
-                            "1. クローンしたい声の音声をアップロードします。\n"
+                            "1. クローンしたい声の音声をアップロードするか、声のデザイン履歴から選びます。\n"
                             "2. 必要なら声の指示で雰囲気を調整します。\n"
                             "3. 読み上げテキストを入力して生成します。"
                         )
@@ -1182,6 +1202,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         clone_intonation,
                         clone_word_accent,
                         clone_ref,
+                        clone_history,
                         clone_language,
                         clone_cfg,
                         clone_normalize,
@@ -1191,6 +1212,12 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[clone_output, clone_file],
                     show_progress=True,
                     api_name="clone",
+                )
+                clone_history_refresh.click(
+                    fn=_refresh_voice_design_history,
+                    inputs=[],
+                    outputs=[clone_history],
+                    show_progress=False,
                 )
 
             with gr.Tab("高精度クローン"):
@@ -1206,6 +1233,13 @@ def create_demo_interface(demo: VoxCPMDemo):
                             type="filepath",
                             label="参照音声",
                         )
+                        hifi_history = gr.Dropdown(
+                            choices=_list_voice_design_history(),
+                            value=None,
+                            label="声のデザイン履歴から選択（任意）",
+                            info="参照音声をアップロードしていない場合、この履歴の声を使います。",
+                        )
+                        hifi_history_refresh = gr.Button("履歴を更新", variant="secondary", size="sm")
                         hifi_language = _language_dropdown()
                         hifi_prompt_text = gr.Textbox(
                             value="",
@@ -1237,7 +1271,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         hifi_file = gr.File(label="WAVダウンロード", interactive=False)
                         gr.Markdown(
                             "**使い方**\n\n"
-                            "1. 参照音声をアップロードします。\n"
+                            "1. 参照音声をアップロードするか、声のデザイン履歴から選びます。\n"
                             "2. 参照音声の文字起こしを入力または貼り付けます。自動文字起こしも試せます。\n"
                             "3. 続けて読み上げたい文章を入力して生成します。\n\n"
                             "英語など不要な言葉が冒頭に入る場合は、推奨設定のまま生成してください。"
@@ -1248,16 +1282,23 @@ def create_demo_interface(demo: VoxCPMDemo):
 
                 hifi_transcribe_btn.click(
                     fn=_transcribe_reference,
-                    inputs=[hifi_ref],
+                    inputs=[hifi_ref, hifi_history],
                     outputs=[hifi_prompt_text, hifi_transcribe_status],
                     show_progress=True,
                     api_name="transcribe_reference",
+                )
+                hifi_history_refresh.click(
+                    fn=_refresh_voice_design_history,
+                    inputs=[],
+                    outputs=[hifi_history],
+                    show_progress=False,
                 )
                 hifi_btn.click(
                     fn=_generate_high_fidelity_clone,
                     inputs=[
                         hifi_text,
                         hifi_ref,
+                        hifi_history,
                         hifi_prompt_text,
                         hifi_prevent_leading_mix,
                         hifi_intonation,
