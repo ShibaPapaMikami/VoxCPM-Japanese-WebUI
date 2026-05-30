@@ -792,6 +792,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         text: str,
         ref_wav: Optional[str],
         prompt_text_value: str,
+        prevent_leading_mix: bool,
         intonation_instruction: str,
         word_accent_instruction: str,
         target_language: str,
@@ -802,8 +803,8 @@ def create_demo_interface(demo: VoxCPMDemo):
     ):
         if not ref_wav:
             raise ValueError("高精度クローンには参照音声を指定してください。")
-        if not (prompt_text_value or "").strip():
-            raise ValueError("高精度クローンには参照音声の文字起こしが必要です。")
+        if not prevent_leading_mix and not (prompt_text_value or "").strip():
+            raise ValueError("文字起こしを使う場合は、参照音声の文字起こしが必要です。")
         sr, wav_np = demo.generate_tts_audio(
             text_input=text,
             control_instruction="",
@@ -811,13 +812,14 @@ def create_demo_interface(demo: VoxCPMDemo):
             word_accent_instruction=word_accent_instruction,
             target_language=target_language,
             reference_wav_path_input=ref_wav,
-            prompt_text=prompt_text_value,
+            prompt_text="" if prevent_leading_mix else prompt_text_value,
             cfg_value_input=cfg_value,
             do_normalize=do_normalize,
             denoise=denoise,
             inference_timesteps=int(dit_steps),
         )
-        return (sr, wav_np), _save_wav_for_download(sr, wav_np, "high_fidelity_clone")
+        prefix = "high_fidelity_safe_clone" if prevent_leading_mix else "high_fidelity_clone"
+        return (sr, wav_np), _save_wav_for_download(sr, wav_np, prefix)
 
     def _transcribe_reference(audio_path: Optional[str]):
         if not audio_path:
@@ -1215,6 +1217,11 @@ def create_demo_interface(demo: VoxCPMDemo):
                         hifi_transcribe_status = gr.Markdown(
                             "自動文字起こしは補助機能です。うまくいかない場合は、上の欄に事前の文字起こしを貼り付けてください。"
                         )
+                        hifi_prevent_leading_mix = gr.Checkbox(
+                            value=True,
+                            label="冒頭の不要な言葉を防ぐ（推奨）",
+                            info="有効時は文字起こしを連続生成に使わず、参照音声の声質だけで読み上げます。英語混入が出る場合はこちらを使ってください。",
+                        )
                         hifi_intonation = gr.State("")
                         hifi_word_accent = gr.State("")
                         hifi_text = gr.Textbox(
@@ -1233,7 +1240,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                             "1. 参照音声をアップロードします。\n"
                             "2. 参照音声の文字起こしを入力または貼り付けます。自動文字起こしも試せます。\n"
                             "3. 続けて読み上げたい文章を入力して生成します。\n\n"
-                            "このモードでは声の指示は使わず、参照音声と文字起こしを優先します。"
+                            "英語など不要な言葉が冒頭に入る場合は、推奨設定のまま生成してください。"
+                            "文字起こしを厳密に使いたい場合だけ、冒頭防止をオフにします。"
                             "読み方の調整は、読み上げテキスト内の記号で行ってください。"
                             "参照音声の文字起こしが間違っていると、生成冒頭に不要な言葉が混ざることがあります。"
                         )
@@ -1251,6 +1259,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         hifi_text,
                         hifi_ref,
                         hifi_prompt_text,
+                        hifi_prevent_leading_mix,
                         hifi_intonation,
                         hifi_word_accent,
                         hifi_language,
