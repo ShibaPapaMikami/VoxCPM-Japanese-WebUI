@@ -507,6 +507,20 @@ def _build_word_accent_prompt(word_accent_instruction: str) -> str:
     return "Word-level pitch accent guidance: " + "; ".join(guidance) + "."
 
 
+def _prepare_prompt_text_for_continuation(prompt_text: str, target_language: str = "") -> str:
+    """Keep prompt transcript as spoken text and add a clean boundary before target text."""
+    prompt = (prompt_text or "").strip()
+    prompt = re.sub(r"<\|[^>]+?\|>", "", prompt).strip()
+    prompt = re.sub(r"\s+", " ", prompt)
+    if not prompt:
+        return ""
+
+    if prompt[-1] not in "。.!?！？…、,;；:：":
+        language_name = _LANGUAGE_HINTS.get(target_language or "", "")
+        prompt += "。" if language_name == "Japanese" or _has_any(prompt, ("。", "、")) else "."
+    return prompt + " "
+
+
 class VoxCPMDemo:
     def __init__(
         self,
@@ -622,22 +636,28 @@ class VoxCPMDemo:
         if len(text) == 0:
             raise ValueError("読み上げテキストを入力してください。")
 
-        language_prompt = _build_language_prompt(target_language)
-        control_parts = [
-            part
-            for part in (
-                language_prompt,
-                _build_control_prompt(control_instruction),
-                _build_intonation_prompt(intonation_instruction),
-                _build_word_accent_prompt(word_accent_instruction),
-            )
-            if part
-        ]
-        control = " ".join(control_parts)
-        final_text = f"({control}){text}" if control else text
-
         audio_path = reference_wav_path_input if reference_wav_path_input else None
-        prompt_text_clean = (prompt_text or "").strip() or None
+        prompt_text_clean = _prepare_prompt_text_for_continuation(prompt_text, target_language) or None
+
+        if prompt_text_clean:
+            # Continuation / high-fidelity cloning treats the target text as literal spoken text.
+            # Do not prepend English control prompts here, or they may be spoken at the start.
+            control = ""
+            final_text = text
+        else:
+            language_prompt = _build_language_prompt(target_language)
+            control_parts = [
+                part
+                for part in (
+                    language_prompt,
+                    _build_control_prompt(control_instruction),
+                    _build_intonation_prompt(intonation_instruction),
+                    _build_word_accent_prompt(word_accent_instruction),
+                )
+                if part
+            ]
+            control = " ".join(control_parts)
+            final_text = f"({control}){text}" if control else text
 
         if audio_path and prompt_text_clean:
             logger.info(f"[Voice Cloning] prompt_wav + prompt_text + reference_wav")
@@ -1175,6 +1195,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 gr.Markdown(
                     "参照音声と、その音声で話している内容の文字起こしを使います。"
                     "事前に文字起こししたテキストを貼り付けても使えます。"
+                    "このモードでは不要な読み上げ混入を防ぐため、英語の制御文は先頭に追加しません。"
                 )
                 with gr.Row():
                     with gr.Column():
@@ -1195,7 +1216,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                             "自動文字起こしは補助機能です。うまくいかない場合は、上の欄に事前の文字起こしを貼り付けてください。"
                         )
                         hifi_intonation = gr.State("")
-                        hifi_word_accent = _add_word_accent_controls()
+                        hifi_word_accent = gr.State("")
                         hifi_text = gr.Textbox(
                             value="これは高精度クローンを使った音声生成テストです。",
                             label="続けて読み上げるテキスト",
@@ -1213,6 +1234,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                             "2. 参照音声の文字起こしを入力または貼り付けます。自動文字起こしも試せます。\n"
                             "3. 続けて読み上げたい文章を入力して生成します。\n\n"
                             "このモードでは声の指示は使わず、参照音声と文字起こしを優先します。"
+                            "読み方の調整は、読み上げテキスト内の記号で行ってください。"
+                            "参照音声の文字起こしが間違っていると、生成冒頭に不要な言葉が混ざることがあります。"
                         )
 
                 hifi_transcribe_btn.click(
