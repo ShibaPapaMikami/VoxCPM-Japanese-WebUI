@@ -1,6 +1,8 @@
-<h2 align="center">VoxCPM2: Tokenizer-Free TTS for Multilingual Speech Generation, Creative Voice Design, and True-to-Life Cloning</h2>
+<h2 align="center">JPVoxCPM WebUI</h2>
 
-> **Japanese Windows Web UI fork:** This repository includes a Japanese Gradio UI, Windows CUDA setup scripts, voice design history reuse, explicit WAV download, multilingual controls, and voice cloning workflow improvements.
+<p align="center">A Japanese-friendly VoxCPM2 Web UI for speech generation, voice design, and voice cloning.</p>
+
+> **Japanese Windows Web UI fork:** This repository includes a Japanese Gradio UI, Windows CUDA setup scripts, voice design history reuse, explicit WAV download, multilingual controls, and voice cloning workflow improvements. It is based on [OpenBMB/VoxCPM](https://github.com/OpenBMB/VoxCPM) and is not an official OpenBMB project.
 >
 > 日本語セットアップ手順は [README_SETUP_JA.md](README_SETUP_JA.md) を参照してください。
 >

@@ -1,5 +1,5 @@
 param(
-    [string]$RuleName = "VoxCPM Web UI 8808",
+    [string]$RuleName = "JPVoxCPM WebUI 8808",
     [int]$Port = 8808,
     [ValidateSet("Domain", "Private", "Public", "Any")]
     [string]$Profile = "Private"

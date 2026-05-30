@@ -1011,13 +1011,14 @@ def create_demo_interface(demo: VoxCPMDemo):
             )
         return denoise_control, normalize_control, cfg_control, steps_control
 
-    with gr.Blocks(title="VoxCPM 日本語音声生成") as interface:
+    with gr.Blocks(title="JPVoxCPM WebUI") as interface:
         gr.HTML(
             '<div class="logo-container">'
             '<img src="/gradio_api/file=assets/voxcpm_logo.png" alt="VoxCPM Logo">'
             "</div>"
         )
 
+        gr.Markdown("## JPVoxCPM WebUI\n**日本語で使いやすい VoxCPM2 音声生成・声クローンWeb UIです。**")
         gr.Markdown("**用途に合わせてモードを選んでください。** 各画面には、その生成方法に必要な入力だけを表示しています。")
 
         with gr.Tabs():

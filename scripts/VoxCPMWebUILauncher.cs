@@ -44,7 +44,7 @@ public static class VoxCPMWebUILauncher
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine("Failed to start VoxCPM Web UI: " + ex.Message);
+            Console.Error.WriteLine("Failed to start JPVoxCPM WebUI: " + ex.Message);
             return 1;
         }
     }

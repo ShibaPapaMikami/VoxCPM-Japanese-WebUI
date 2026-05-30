@@ -1,6 +1,6 @@
-# VoxCPM 日本語Web UI セットアップ
+# JPVoxCPM WebUI セットアップ
 
-このリポジトリは OpenBMB/VoxCPM をベースに、日本語UI、声のデザイン履歴、WAVダウンロード、多言語選択、高精度クローン補助などを追加した社内向けWeb UIです。
+JPVoxCPM WebUIは、OpenBMB/VoxCPM をベースに、日本語UI、声のデザイン履歴、WAVダウンロード、多言語選択、高精度クローン補助などを追加した社内向けWeb UIです。
 
 ## 対象環境
 

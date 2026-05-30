@@ -1,10 +1,10 @@
-# VoxCPM 日本語Web UI
+# JPVoxCPM WebUI
 
 <p align="center">
   <b>日本語</b> | <a href="./README_en.md">English</a> | <a href="./README_zh.md">中文</a>
 </p>
 
-VoxCPM2をWindowsで使いやすくするための日本語Web UI版です。  
+日本語で使いやすい VoxCPM2 音声生成・声クローンWeb UIです。  
 OpenBMB/VoxCPMをベースに、日本語UI、Windows CUDAセットアップ、声のデザイン履歴、WAVダウンロード、多言語発話、声のクローン操作を追加しています。
 
 元プロジェクト: [OpenBMB/VoxCPM](https://github.com/OpenBMB/VoxCPM)

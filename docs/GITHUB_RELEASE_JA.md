@@ -26,7 +26,7 @@
 OpenBMB/VoxCPM と VoxCPM2 は Apache-2.0 ライセンスです。公開リポジトリでは `LICENSE` を残し、READMEに以下のような説明を入れてください。
 
 ```text
-This project is based on OpenBMB/VoxCPM and includes local UI/Windows setup modifications.
+JPVoxCPM WebUI is based on OpenBMB/VoxCPM and includes local UI/Windows setup modifications.
 Original project: https://github.com/OpenBMB/VoxCPM
 License: Apache-2.0
 ```

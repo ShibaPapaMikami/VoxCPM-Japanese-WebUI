@@ -52,7 +52,7 @@ if (!$LoadDenoiser) {
     $AppArgs += "--no-denoiser"
 }
 
-Write-Host "VoxCPM Web UI"
+Write-Host "JPVoxCPM WebUI"
 Write-Host "  URL:    $Url"
 Write-Host "  Host:   $HostAddress"
 Write-Host "  Model:  $ModelId"
