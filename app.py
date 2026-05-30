@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import logging
+import subprocess
 import numpy as np
 import gradio as gr
 from gradio import processing_utils
@@ -684,9 +685,10 @@ class VoxCPMDemo:
 
 def create_demo_interface(demo: VoxCPMDemo):
     gr.set_static_paths(paths=[Path.cwd().absolute() / "assets"])
+    current_output_dir = {"path": (Path.cwd() / "outputs").resolve()}
 
     def _list_voice_design_history():
-        output_dir = Path.cwd() / "outputs"
+        output_dir = _output_dir(create=False)
         if not output_dir.exists():
             return []
         choices = []
@@ -695,10 +697,76 @@ def create_demo_interface(demo: VoxCPMDemo):
             choices.append((f"{timestamp} - {path.name}", str(path)))
         return choices
 
-    def _output_dir() -> Path:
-        output_dir = Path.cwd() / "outputs"
-        output_dir.mkdir(parents=True, exist_ok=True)
+    def _resolve_output_dir(folder_path: str = "") -> Path:
+        folder_path = (folder_path or "").strip()
+        if not folder_path:
+            return (Path.cwd() / "outputs").resolve()
+        expanded = os.path.expandvars(os.path.expanduser(folder_path))
+        output_dir = Path(expanded)
+        if not output_dir.is_absolute():
+            output_dir = Path.cwd() / output_dir
+        return output_dir.resolve()
+
+    def _output_dir(create: bool = True) -> Path:
+        output_dir = current_output_dir["path"]
+        if create:
+            output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
+
+    def _history_dropdown_update(default_to_first: bool = True):
+        choices = _list_voice_design_history()
+        value = choices[0][1] if default_to_first and choices else None
+        return gr.update(choices=choices, value=value)
+
+    def _set_output_dir(folder_path: str):
+        try:
+            output_dir = _resolve_output_dir(folder_path)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            if not output_dir.is_dir():
+                raise ValueError("指定されたパスはフォルダではありません。")
+            current_output_dir["path"] = output_dir
+            folder_text = str(output_dir)
+            history_update = _history_dropdown_update()
+            message = f"保存先フォルダを変更しました: {folder_text}"
+            return (
+                gr.update(value=folder_text),
+                gr.update(value=folder_text),
+                gr.update(value=folder_text),
+                gr.update(value=folder_text),
+                history_update,
+                history_update,
+                history_update,
+                message,
+            )
+        except Exception as e:
+            folder_text = str(_output_dir(create=False))
+            message = f"保存先フォルダを変更できませんでした: {e}"
+            return (
+                gr.update(value=folder_text),
+                gr.update(value=folder_text),
+                gr.update(value=folder_text),
+                gr.update(value=folder_text),
+                gr.update(),
+                gr.update(),
+                gr.update(),
+                message,
+            )
+
+    def _open_output_dir(folder_path: str):
+        try:
+            output_dir = _resolve_output_dir(folder_path)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            if not output_dir.is_dir():
+                raise ValueError("指定されたパスはフォルダではありません。")
+            if sys.platform.startswith("win"):
+                os.startfile(str(output_dir))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(output_dir)])
+            else:
+                subprocess.Popen(["xdg-open", str(output_dir)])
+            return f"保存先フォルダを開きました: {output_dir}"
+        except Exception as e:
+            return f"保存先フォルダを開けませんでした: {e}"
 
     def _sanitize_filename(name: str) -> str:
         name = (name or "").strip()
@@ -750,23 +818,27 @@ def create_demo_interface(demo: VoxCPMDemo):
         return (sr, wav_np), output_path, gr.update(choices=_list_voice_design_history(), value=output_path)
 
     def _refresh_voice_design_history():
-        choices = _list_voice_design_history()
-        return gr.update(choices=choices, value=choices[0][1] if choices else None)
+        return _history_dropdown_update()
 
     def _delete_voice_design_history(history_wav: Optional[str]):
         if not history_wav:
-            return gr.update(), "削除する履歴ファイルを選んでください。"
+            message = "削除する履歴ファイルを選んでください。"
+            return gr.update(), gr.update(), gr.update(), message
         output_dir = _output_dir().resolve()
         target = Path(history_wav).resolve()
         if output_dir not in target.parents:
-            raise ValueError("outputsフォルダ内の履歴ファイルだけ削除できます。")
+            raise ValueError("現在の保存先フォルダ内の履歴ファイルだけ削除できます。")
         if target.exists():
             target.unlink()
             message = f"削除しました: {target.name}"
         else:
             message = "ファイルは既に存在しません。履歴を更新しました。"
-        choices = _list_voice_design_history()
-        return gr.update(choices=choices, value=choices[0][1] if choices else None), message
+        history_update = _history_dropdown_update()
+        return history_update, history_update, history_update, message
+
+    def _delete_voice_design_history_single(history_wav: Optional[str]):
+        history_update, _, _, message = _delete_voice_design_history(history_wav)
+        return history_update, message
 
     def _resolve_reference_audio(
         uploaded_ref: Optional[str],
@@ -1093,6 +1165,18 @@ def create_demo_interface(demo: VoxCPMDemo):
         gr.Markdown("## JPVoxCPM WebUI\n**日本語で使いやすい VoxCPM2 音声生成・声クローンWeb UIです。**")
         gr.Markdown("**用途に合わせてモードを選んでください。** 各画面には、その生成方法に必要な入力だけを表示しています。")
 
+        with gr.Accordion("保存先フォルダ", open=True):
+            output_dir_global = gr.Textbox(
+                value=str(_output_dir()),
+                label="保存先フォルダ",
+                info="生成したWAVと声のデザイン履歴を保存するフォルダです。相対パスも指定できます。",
+                lines=1,
+            )
+            with gr.Row():
+                output_dir_apply = gr.Button("保存先を変更", variant="secondary")
+                output_dir_open = gr.Button("フォルダを開く", variant="secondary")
+            output_dir_status = gr.Markdown("")
+
         with gr.Tabs():
             with gr.Tab("声のデザイン"):
                 gr.Markdown(
@@ -1194,10 +1278,11 @@ def create_demo_interface(demo: VoxCPMDemo):
                     show_progress=False,
                 )
                 design_history_delete.click(
-                    fn=_delete_voice_design_history,
+                    fn=_delete_voice_design_history_single,
                     inputs=[design_history],
                     outputs=[design_history, design_history_status],
                     show_progress=False,
+                    api_name=False,
                 )
                 design_reuse_btn.click(
                     fn=_generate_from_design_history,
@@ -1298,10 +1383,11 @@ def create_demo_interface(demo: VoxCPMDemo):
                     show_progress=False,
                 )
                 clone_history_delete.click(
-                    fn=_delete_voice_design_history,
+                    fn=_delete_voice_design_history_single,
                     inputs=[clone_history],
                     outputs=[clone_history, clone_history_status],
                     show_progress=False,
+                    api_name=False,
                 )
 
             with gr.Tab("高精度クローン"):
@@ -1391,10 +1477,11 @@ def create_demo_interface(demo: VoxCPMDemo):
                     show_progress=False,
                 )
                 hifi_history_delete.click(
-                    fn=_delete_voice_design_history,
+                    fn=_delete_voice_design_history_single,
                     inputs=[hifi_history],
                     outputs=[hifi_history, hifi_history_status],
                     show_progress=False,
+                    api_name=False,
                 )
                 hifi_btn.click(
                     fn=_generate_high_fidelity_clone,
@@ -1417,6 +1504,30 @@ def create_demo_interface(demo: VoxCPMDemo):
                     show_progress=True,
                     api_name="high_fidelity_clone",
                 )
+
+        output_dir_apply.click(
+            fn=_set_output_dir,
+            inputs=[output_dir_global],
+            outputs=[
+                output_dir_global,
+                design_output_dir,
+                clone_output_dir,
+                hifi_output_dir,
+                design_history,
+                clone_history,
+                hifi_history,
+                output_dir_status,
+            ],
+            show_progress=False,
+            api_name=False,
+        )
+        output_dir_open.click(
+            fn=_open_output_dir,
+            inputs=[output_dir_global],
+            outputs=[output_dir_status],
+            show_progress=False,
+            api_name=False,
+        )
 
     return interface
 
