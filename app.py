@@ -1038,6 +1038,27 @@ def create_demo_interface(demo: VoxCPMDemo):
             return demo.irodori_status()
         return "VoxCPM2を使用します。多言語、声のデザイン、声のクローン、高精度クローンに対応しています。"
 
+    def _engine_visibility_updates(engine_label: str):
+        is_irodori = _engine_is_irodori(engine_label)
+        voxcpm_only = gr.update(visible=not is_irodori)
+        irodori_only = gr.update(visible=is_irodori)
+        return (
+            _engine_status(engine_label),
+            voxcpm_only,
+            voxcpm_only,
+            voxcpm_only,
+            voxcpm_only,
+            voxcpm_only,
+            voxcpm_only,
+            voxcpm_only,
+            voxcpm_only,
+            voxcpm_only,
+            voxcpm_only,
+            voxcpm_only,
+            voxcpm_only,
+            irodori_only,
+        )
+
     def _generate_design(
         engine_label: str,
         text: str,
@@ -1478,7 +1499,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             output_dir_status = gr.Markdown("")
 
         with gr.Tabs():
-            with gr.Tab("声のデザイン"):
+            with gr.Tab("声のデザイン") as design_tab:
                 gr.Markdown(
                     "参照音声を使わず、声の雰囲気を文章で指定して新しい声を作ります。"
                     "男性声・女性声・話す速さなどの日本語指定は、内部でモデル向けの声質タグに補強されます。"
@@ -1487,7 +1508,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                     with gr.Column():
                         design_language = _language_dropdown()
                         with gr.Accordion("声の基本設定", open=True):
-                            with gr.Row():
+                            with gr.Row() as design_voice_age_gender_row:
                                 design_voice_age = gr.Dropdown(
                                     choices=_VOICE_AGE_LABELS,
                                     value="大人",
@@ -1513,7 +1534,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                             lines=3,
                         )
                         design_intonation = gr.State("")
-                        design_word_accent = _add_word_accent_controls()
+                        with gr.Group() as design_word_accent_group:
+                            design_word_accent = _add_word_accent_controls()
                         design_text = gr.Textbox(
                             value=DEFAULT_TARGET_TEXT,
                             label="読み上げテキスト",
@@ -1525,11 +1547,13 @@ def create_demo_interface(demo: VoxCPMDemo):
                             placeholder="例: calm_male_narration",
                             lines=1,
                         )
-                        _add_prosody_controls(design_text)
-                        _, design_normalize, design_cfg, design_steps = _advanced_settings(
-                            include_denoise=False,
-                            cfg_default=2.6,
-                        )
+                        with gr.Group() as design_prosody_group:
+                            _add_prosody_controls(design_text)
+                        with gr.Group() as design_advanced_group:
+                            _, design_normalize, design_cfg, design_steps = _advanced_settings(
+                                include_denoise=False,
+                                cfg_default=2.6,
+                            )
                         design_btn = gr.Button("この声を生成", variant="primary", size="lg")
                     with gr.Column():
                         design_output = gr.Audio(label="生成された音声")
@@ -1626,7 +1650,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                     api_name="design_reuse",
                 )
 
-            with gr.Tab("声のクローン"):
+            with gr.Tab("声のクローン") as clone_tab:
                 gr.Markdown("参照音声の声質をもとに、別の文章を読み上げます。声の指示で雰囲気の調整もできます。")
                 with gr.Row():
                     with gr.Column():
@@ -1650,7 +1674,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                             lines=2,
                         )
                         clone_intonation = gr.State("")
-                        clone_word_accent = _add_word_accent_controls()
+                        with gr.Group() as clone_word_accent_group:
+                            clone_word_accent = _add_word_accent_controls()
                         clone_text = gr.Textbox(
                             value="これは参照音声を使った声のクローン生成テストです。",
                             label="読み上げテキスト",
@@ -1662,8 +1687,10 @@ def create_demo_interface(demo: VoxCPMDemo):
                             placeholder="例: cloned_voice_sample",
                             lines=1,
                         )
-                        _add_prosody_controls(clone_text)
-                        clone_denoise, clone_normalize, clone_cfg, clone_steps = _advanced_settings(include_denoise=True)
+                        with gr.Group() as clone_prosody_group:
+                            _add_prosody_controls(clone_text)
+                        with gr.Group() as clone_advanced_group:
+                            clone_denoise, clone_normalize, clone_cfg, clone_steps = _advanced_settings(include_denoise=True)
                         clone_btn = gr.Button("この声で生成", variant="primary", size="lg")
                     with gr.Column():
                         clone_output = gr.Audio(label="生成された音声")
@@ -1718,78 +1745,83 @@ def create_demo_interface(demo: VoxCPMDemo):
                     api_visibility="private",
                 )
 
-            with gr.Tab("高精度クローン"):
+            with gr.Tab("高精度クローン") as hifi_tab:
                 gr.Markdown(
                     "参照音声と、その音声で話している内容の文字起こしを使います。"
                     "事前に文字起こししたテキストを貼り付けても使えます。"
                     "このモードでは不要な読み上げ混入を防ぐため、英語の制御文は先頭に追加しません。"
                 )
-                with gr.Row():
-                    with gr.Column():
-                        hifi_ref = gr.Audio(
-                            sources=["upload", "microphone"],
-                            type="filepath",
-                            label="参照音声",
-                        )
-                        hifi_history = gr.Dropdown(
-                            choices=_list_voice_design_history(),
-                            value=None,
-                            label="声のデザイン履歴から選択（任意）",
-                            info="参照音声をアップロードしていない場合、この履歴の声を使います。",
-                        )
-                        hifi_history_refresh = gr.Button("履歴を更新", variant="secondary", size="sm")
-                        hifi_language = _language_dropdown()
-                        hifi_prompt_text = gr.Textbox(
-                            value="",
-                            label="参照音声の文字起こし（手入力・貼り付け可）",
-                            placeholder="参照音声で実際に話している内容を入力してください。例: こんにちは。今日はVoxCPMのテストをしています。",
-                            lines=5,
-                        )
-                        hifi_transcribe_btn = gr.Button("自動文字起こしを試す", variant="secondary")
-                        hifi_transcribe_status = gr.Markdown(
-                            "自動文字起こしは補助機能です。うまくいかない場合は、上の欄に事前の文字起こしを貼り付けてください。"
-                        )
-                        hifi_prevent_leading_mix = gr.Checkbox(
-                            value=True,
-                            label="冒頭の不要な言葉を防ぐ（推奨）",
-                            info="有効時は文字起こしを連続生成に使わず、参照音声の声質だけで読み上げます。英語混入が出る場合はこちらを使ってください。",
-                        )
-                        hifi_intonation = gr.State("")
-                        hifi_word_accent = gr.State("")
-                        hifi_text = gr.Textbox(
-                            value="これは高精度クローンを使った音声生成テストです。",
-                            label="続けて読み上げるテキスト",
-                            lines=5,
-                        )
-                        hifi_filename = gr.Textbox(
-                            value="",
-                            label="保存ファイル名（任意）",
-                            placeholder="例: high_fidelity_clone_sample",
-                            lines=1,
-                        )
-                        _add_prosody_controls(hifi_text)
-                        hifi_denoise, hifi_normalize, hifi_cfg, hifi_steps = _advanced_settings(include_denoise=True)
-                        hifi_btn = gr.Button("高精度クローンで生成", variant="primary", size="lg")
-                    with gr.Column():
-                        hifi_output = gr.Audio(label="生成された音声")
-                        hifi_file = gr.File(label="WAVダウンロード", interactive=False)
-                        hifi_output_dir = gr.Textbox(
-                            value=str(_output_dir()),
-                            label="保存先フォルダ",
-                            interactive=False,
-                        )
-                        hifi_history_delete = gr.Button("選択した履歴を削除", variant="stop", size="sm")
-                        hifi_history_status = gr.Markdown("")
-                        gr.Markdown(
-                            "**使い方**\n\n"
-                            "1. 参照音声をアップロードするか、声のデザイン履歴から選びます。\n"
-                            "2. 参照音声の文字起こしを入力または貼り付けます。自動文字起こしも試せます。\n"
-                            "3. 続けて読み上げたい文章を入力して生成します。\n\n"
-                            "英語など不要な言葉が冒頭に入る場合は、推奨設定のまま生成してください。"
-                            "文字起こしを厳密に使いたい場合だけ、冒頭防止をオフにします。"
-                            "読み方の調整は、読み上げテキスト内の記号で行ってください。"
-                            "参照音声の文字起こしが間違っていると、生成冒頭に不要な言葉が混ざることがあります。"
-                        )
+                hifi_irodori_notice = gr.Markdown(
+                    "Irodori-TTSは高精度クローンには対応していません。Irodori-TTSを使う場合は「声のクローン」タブで参照音声を指定してください。",
+                    visible=False,
+                )
+                with gr.Group() as hifi_voxcpm_group:
+                    with gr.Row():
+                        with gr.Column():
+                            hifi_ref = gr.Audio(
+                                sources=["upload", "microphone"],
+                                type="filepath",
+                                label="参照音声",
+                            )
+                            hifi_history = gr.Dropdown(
+                                choices=_list_voice_design_history(),
+                                value=None,
+                                label="声のデザイン履歴から選択（任意）",
+                                info="参照音声をアップロードしていない場合、この履歴の声を使います。",
+                            )
+                            hifi_history_refresh = gr.Button("履歴を更新", variant="secondary", size="sm")
+                            hifi_language = _language_dropdown()
+                            hifi_prompt_text = gr.Textbox(
+                                value="",
+                                label="参照音声の文字起こし（手入力・貼り付け可）",
+                                placeholder="参照音声で実際に話している内容を入力してください。例: こんにちは。今日はVoxCPMのテストをしています。",
+                                lines=5,
+                            )
+                            hifi_transcribe_btn = gr.Button("自動文字起こしを試す", variant="secondary")
+                            hifi_transcribe_status = gr.Markdown(
+                                "自動文字起こしは補助機能です。うまくいかない場合は、上の欄に事前の文字起こしを貼り付けてください。"
+                            )
+                            hifi_prevent_leading_mix = gr.Checkbox(
+                                value=True,
+                                label="冒頭の不要な言葉を防ぐ（推奨）",
+                                info="有効時は文字起こしを連続生成に使わず、参照音声の声質だけで読み上げます。英語混入が出る場合はこちらを使ってください。",
+                            )
+                            hifi_intonation = gr.State("")
+                            hifi_word_accent = gr.State("")
+                            hifi_text = gr.Textbox(
+                                value="これは高精度クローンを使った音声生成テストです。",
+                                label="続けて読み上げるテキスト",
+                                lines=5,
+                            )
+                            hifi_filename = gr.Textbox(
+                                value="",
+                                label="保存ファイル名（任意）",
+                                placeholder="例: high_fidelity_clone_sample",
+                                lines=1,
+                            )
+                            _add_prosody_controls(hifi_text)
+                            hifi_denoise, hifi_normalize, hifi_cfg, hifi_steps = _advanced_settings(include_denoise=True)
+                            hifi_btn = gr.Button("高精度クローンで生成", variant="primary", size="lg")
+                        with gr.Column():
+                            hifi_output = gr.Audio(label="生成された音声")
+                            hifi_file = gr.File(label="WAVダウンロード", interactive=False)
+                            hifi_output_dir = gr.Textbox(
+                                value=str(_output_dir()),
+                                label="保存先フォルダ",
+                                interactive=False,
+                            )
+                            hifi_history_delete = gr.Button("選択した履歴を削除", variant="stop", size="sm")
+                            hifi_history_status = gr.Markdown("")
+                            gr.Markdown(
+                                "**使い方**\n\n"
+                                "1. 参照音声をアップロードするか、声のデザイン履歴から選びます。\n"
+                                "2. 参照音声の文字起こしを入力または貼り付けます。自動文字起こしも試せます。\n"
+                                "3. 続けて読み上げたい文章を入力して生成します。\n\n"
+                                "英語など不要な言葉が冒頭に入る場合は、推奨設定のまま生成してください。"
+                                "文字起こしを厳密に使いたい場合だけ、冒頭防止をオフにします。"
+                                "読み方の調整は、読み上げテキスト内の記号で行ってください。"
+                                "参照音声の文字起こしが間違っていると、生成冒頭に不要な言葉が混ざることがあります。"
+                            )
 
                 hifi_transcribe_btn.click(
                     fn=_transcribe_reference,
@@ -1835,14 +1867,40 @@ def create_demo_interface(demo: VoxCPMDemo):
                     api_name="high_fidelity_clone",
                 )
 
+        engine_visibility_outputs = [
+            engine_status,
+            design_language,
+            design_voice_age_gender_row,
+            design_control,
+            design_word_accent_group,
+            design_prosody_group,
+            design_advanced_group,
+            clone_language,
+            clone_control,
+            clone_word_accent_group,
+            clone_prosody_group,
+            clone_advanced_group,
+            hifi_voxcpm_group,
+            hifi_irodori_notice,
+        ]
+
         engine_selector.change(
-            fn=_engine_status,
+            fn=_engine_visibility_updates,
             inputs=[engine_selector],
-            outputs=[engine_status],
+            outputs=engine_visibility_outputs,
             show_progress=False,
             api_name=None,
             api_visibility="private",
         )
+        for engine_aware_tab in (design_tab, clone_tab, hifi_tab):
+            engine_aware_tab.select(
+                fn=_engine_visibility_updates,
+                inputs=[engine_selector],
+                outputs=engine_visibility_outputs,
+                show_progress=False,
+                api_name=None,
+                api_visibility="private",
+            )
 
         output_dir_apply.click(
             fn=_set_output_dir,
