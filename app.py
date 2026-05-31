@@ -375,11 +375,85 @@ _LANGUAGE_OPTIONS = [
 _LANGUAGE_HINTS = dict(_LANGUAGE_OPTIONS)
 _LANGUAGE_LABELS = [label for label, _ in _LANGUAGE_OPTIONS]
 
+_VOICE_AGE_LABELS = ["指定なし", "赤ちゃん", "子供", "若者", "大人", "老人"]
+_VOICE_GENDER_LABELS = ["指定なし", "男性", "女性", "中性的"]
+_VOICE_FEATURE_LABELS = [
+    "明るい",
+    "暗い",
+    "元気",
+    "落ち着いた",
+    "やさしい",
+    "かわいい",
+    "渋い",
+    "子供っぽい",
+    "大人っぽい",
+    "ナレーション",
+    "聞き取りやすい",
+    "ゆっくり",
+    "早口",
+]
+
 
 # ---------- Model ----------
 
 def _has_any(text: str, keywords: tuple[str, ...]) -> bool:
     return any(keyword in text for keyword in keywords)
+
+
+def _build_structured_voice_prompt(
+    age_label: str,
+    gender_label: str,
+    feature_labels: Optional[list[str]],
+) -> str:
+    age_tags = {
+        "赤ちゃん": "baby voice, infant-like tiny voice",
+        "子供": "child voice, young child timbre",
+        "若者": "young adult voice",
+        "大人": "adult voice, mature timbre",
+        "老人": "elderly voice, aged timbre",
+    }
+    gender_tags = {
+        "男性": "male voice, masculine timbre",
+        "女性": "female voice, feminine timbre",
+        "中性的": "androgynous voice, gender-neutral timbre",
+    }
+    feature_tags = {
+        "明るい": "bright tone",
+        "暗い": "dark subdued tone",
+        "元気": "energetic delivery",
+        "落ち着いた": "calm and composed tone",
+        "やさしい": "gentle and warm tone",
+        "かわいい": "cute voice",
+        "渋い": "deep rich mature voice",
+        "子供っぽい": "childlike speaking style",
+        "大人っぽい": "adult-like composed speaking style",
+        "ナレーション": "professional narrator voice",
+        "聞き取りやすい": "clear articulation",
+        "ゆっくり": "slightly slow speaking pace",
+        "早口": "fast speaking pace",
+    }
+    tags: list[str] = []
+    if age_label in age_tags:
+        tags.append(age_tags[age_label])
+    if gender_label in gender_tags:
+        tags.append(gender_tags[gender_label])
+    for label in feature_labels or []:
+        if label in feature_tags:
+            tags.append(feature_tags[label])
+    if not tags:
+        return ""
+    return f"Voice profile: {', '.join(dict.fromkeys(tags))}."
+
+
+def _combine_voice_profile_prompt(
+    age_label: str,
+    gender_label: str,
+    feature_labels: Optional[list[str]],
+    control_instruction: str,
+) -> str:
+    structured = _build_structured_voice_prompt(age_label, gender_label, feature_labels)
+    control = (control_instruction or "").strip()
+    return " ".join(part for part in (structured, control) if part)
 
 
 def _build_control_prompt(control_instruction: str) -> str:
@@ -814,6 +888,9 @@ def create_demo_interface(demo: VoxCPMDemo):
 
     def _generate_design(
         text: str,
+        voice_age: str,
+        voice_gender: str,
+        voice_features: Optional[list[str]],
         control_instruction: str,
         intonation_instruction: str,
         word_accent_instruction: str,
@@ -823,9 +900,15 @@ def create_demo_interface(demo: VoxCPMDemo):
         do_normalize: bool,
         dit_steps: int,
     ):
+        control_prompt = _combine_voice_profile_prompt(
+            voice_age,
+            voice_gender,
+            voice_features,
+            control_instruction,
+        )
         sr, wav_np = demo.generate_tts_audio(
             text_input=text,
-            control_instruction=control_instruction,
+            control_instruction=control_prompt,
             intonation_instruction=intonation_instruction,
             word_accent_instruction=word_accent_instruction,
             target_language=target_language,
@@ -1208,6 +1291,26 @@ def create_demo_interface(demo: VoxCPMDemo):
                 with gr.Row():
                     with gr.Column():
                         design_language = _language_dropdown()
+                        with gr.Accordion("声の基本設定", open=True):
+                            with gr.Row():
+                                design_voice_age = gr.Dropdown(
+                                    choices=_VOICE_AGE_LABELS,
+                                    value="大人",
+                                    label="年齢",
+                                    info="自由入力より安定しやすい声質タグとして反映します。",
+                                )
+                                design_voice_gender = gr.Dropdown(
+                                    choices=_VOICE_GENDER_LABELS,
+                                    value="男性",
+                                    label="性別",
+                                    info="声質の方向性として反映します。",
+                                )
+                            design_voice_features = gr.CheckboxGroup(
+                                choices=_VOICE_FEATURE_LABELS,
+                                value=["落ち着いた", "ナレーション", "聞き取りやすい", "ゆっくり"],
+                                label="特徴",
+                                info="複数選べます。矛盾する特徴を同時に選ぶと効果が弱くなることがあります。",
+                            )
                         design_control = gr.Textbox(
                             value="低めの落ち着いた日本語の男性ナレーション。大人の男性声で、聞き取りやすく、少しゆっくり話す。",
                             label="声の指示",
@@ -1280,6 +1383,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                     fn=_generate_design,
                     inputs=[
                         design_text,
+                        design_voice_age,
+                        design_voice_gender,
+                        design_voice_features,
                         design_control,
                         design_intonation,
                         design_word_accent,
