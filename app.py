@@ -1086,6 +1086,50 @@ def create_demo_interface(demo: VoxCPMDemo):
         logger.info(f"Saved generated WAV for download: {output_path}")
         return str(output_path)
 
+    def _prepare_irodori_reference_wav(reference_wav: Optional[str]) -> tuple[Optional[str], Optional[Path]]:
+        if not reference_wav:
+            return None, None
+        source_path = Path(reference_wav)
+        if source_path.suffix.lower() == ".wav":
+            return str(source_path), None
+
+        converted_path = _output_dir() / f"_irodori_ref_{uuid4().hex[:8]}.wav"
+        ffmpeg_path = shutil.which("ffmpeg")
+        if ffmpeg_path:
+            command = [
+                ffmpeg_path,
+                "-y",
+                "-i",
+                str(source_path),
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "24000",
+                "-c:a",
+                "pcm_s16le",
+                str(converted_path),
+            ]
+            result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+            if result.returncode != 0:
+                detail = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
+                raise RuntimeError(f"Irodori-TTS用の参照音声WAV変換に失敗しました。\n{detail[-800:]}")
+            return str(converted_path), converted_path
+
+        try:
+            import librosa
+            import soundfile as sf
+
+            wav_np, sr = librosa.load(str(source_path), sr=24000, mono=True)
+            sf.write(str(converted_path), wav_np, sr, subtype="PCM_16")
+            return str(converted_path), converted_path
+        except Exception as e:
+            raise RuntimeError(
+                "Irodori-TTS用の参照音声WAV変換に失敗しました。"
+                "m4a/mp3などを使う場合はffmpegをインストールするか、参照音声をWAVでアップロードしてください。"
+                f" 詳細: {e}"
+            ) from e
+
     def _generate_irodori_for_download(
         text: str,
         prefix: str,
@@ -1099,11 +1143,12 @@ def create_demo_interface(demo: VoxCPMDemo):
         temp_path = _output_dir() / f"_irodori_tmp_{uuid4().hex[:8]}.wav"
         styled_text = _build_irodori_style_text(text, style_features, control_instruction)
         caption = _build_irodori_caption(voice_age, voice_gender, style_features, control_instruction)
+        prepared_reference, converted_reference = _prepare_irodori_reference_wav(reference_wav)
         try:
             sr, wav_np = demo.generate_irodori_audio(
                 text_input=styled_text,
                 output_wav_path=str(temp_path),
-                reference_wav_path_input=reference_wav,
+                reference_wav_path_input=prepared_reference,
                 caption_input=caption,
             )
             output_path = _save_wav_for_download(sr, wav_np, prefix, filename_hint)
@@ -1112,6 +1157,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             try:
                 if temp_path.exists():
                     temp_path.unlink()
+                if converted_reference and converted_reference.exists():
+                    converted_reference.unlink()
             except OSError:
                 pass
 
