@@ -5,6 +5,7 @@ voxcpm.egg-info
 .DS_Store
 pretrained_models/
 outputs/
+external/
 app_local.py
 .uv-cache/
 .codex-gitconfig

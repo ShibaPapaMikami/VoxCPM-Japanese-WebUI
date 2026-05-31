@@ -3,6 +3,7 @@ import re
 import sys
 import json
 import logging
+import shutil
 import subprocess
 import numpy as np
 import gradio as gr
@@ -393,6 +394,10 @@ _VOICE_FEATURE_LABELS = [
     "早口",
 ]
 
+_ENGINE_VOXCPM = "VoxCPM2（総合）"
+_ENGINE_IRODORI = "Irodori-TTS（日本語特化・実験）"
+_ENGINE_LABELS = [_ENGINE_VOXCPM, _ENGINE_IRODORI]
+
 
 # ---------- Model ----------
 
@@ -454,6 +459,40 @@ def _combine_voice_profile_prompt(
     structured = _build_structured_voice_prompt(age_label, gender_label, feature_labels)
     control = (control_instruction or "").strip()
     return " ".join(part for part in (structured, control) if part)
+
+
+def _engine_is_irodori(engine_label: str) -> bool:
+    return (engine_label or "").startswith("Irodori-TTS")
+
+
+def _ensure_irodori_japanese(target_language: str) -> None:
+    if target_language and target_language not in ("自動（テキストから判定）", "日本語"):
+        raise ValueError("Irodori-TTSは日本語専用です。発話言語を日本語または自動にしてください。")
+
+
+def _build_irodori_style_text(
+    text: str,
+    feature_labels: Optional[list[str]] = None,
+    control_instruction: str = "",
+) -> str:
+    """Add conservative emoji style hints for Irodori while keeping the spoken text readable."""
+    feature_labels = feature_labels or []
+    control = control_instruction or ""
+    emojis: list[str] = []
+    keyword_emoji_pairs = [
+        (("明るい", "元気", "楽しい", "嬉しい"), "😊"),
+        (("暗い", "悲しい", "寂しい"), "😔"),
+        (("かわいい", "可愛い", "やさしい", "優しい"), "🥰"),
+        (("落ち着いた", "穏やか", "ナレーション"), "🙂"),
+        (("驚き", "びっくり"), "😲"),
+        (("怒り", "怒った"), "😠"),
+    ]
+    joined = " ".join(feature_labels) + " " + control
+    for keywords, emoji in keyword_emoji_pairs:
+        if any(keyword in joined for keyword in keywords):
+            emojis.append(emoji)
+    prefix = "".join(dict.fromkeys(emojis[:2]))
+    return f"{prefix}{text}" if prefix else text
 
 
 def _build_control_prompt(control_instruction: str) -> str:
@@ -668,6 +707,75 @@ class VoxCPMDemo:
         )
         return res[0]["text"].split("|>")[-1]
 
+    def irodori_project_dir(self) -> Path:
+        return Path.cwd() / "external" / "Irodori-TTS"
+
+    def irodori_status(self) -> str:
+        project_dir = self.irodori_project_dir()
+        if not project_dir.exists():
+            return "Irodori-TTSは未セットアップです。`scripts\\setup_irodori_tts.ps1` を実行してください。"
+        if not (project_dir / "infer.py").exists():
+            return f"Irodori-TTSの `infer.py` が見つかりません: {project_dir}"
+        if shutil.which("uv") is None:
+            return "`uv` コマンドが見つかりません。Irodori-TTSの実行にはuvが必要です。"
+        return f"Irodori-TTSを利用できます: {project_dir}"
+
+    def generate_irodori_audio(
+        self,
+        *,
+        text_input: str,
+        output_wav_path: str,
+        reference_wav_path_input: Optional[str] = None,
+    ) -> Tuple[int, np.ndarray]:
+        text = (text_input or "").strip()
+        if not text:
+            raise ValueError("読み上げテキストを入力してください。")
+
+        project_dir = self.irodori_project_dir()
+        infer_py = project_dir / "infer.py"
+        if not infer_py.exists():
+            raise RuntimeError(
+                "Irodori-TTSがまだセットアップされていません。"
+                "PowerShellで `scripts\\setup_irodori_tts.ps1` を実行してから、もう一度試してください。"
+            )
+        uv_path = shutil.which("uv")
+        if uv_path is None:
+            raise RuntimeError("`uv` コマンドが見つかりません。Irodori-TTSのセットアップ手順でuvを導入してください。")
+
+        output_path = Path(output_wav_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        command = [
+            uv_path,
+            "run",
+            "python",
+            "infer.py",
+            "--hf-checkpoint",
+            "Aratako/Irodori-TTS-500M-v3",
+            "--text",
+            text,
+            "--output-wav",
+            str(output_path),
+        ]
+        if reference_wav_path_input:
+            command.extend(["--ref-wav", str(reference_wav_path_input)])
+        else:
+            command.append("--no-ref")
+
+        logger.info("Running Irodori-TTS inference...")
+        result = subprocess.run(
+            command,
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+        if result.returncode != 0:
+            detail = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
+            raise RuntimeError(f"Irodori-TTSの生成に失敗しました。\n{detail[-1200:]}")
+        if not output_path.exists():
+            raise RuntimeError("Irodori-TTSの生成は完了しましたが、出力WAVが見つかりませんでした。")
+        return processing_utils.audio_from_file(str(output_path))
+
     def _build_generate_kwargs(
         self,
         *,
@@ -779,8 +887,11 @@ def create_demo_interface(demo: VoxCPMDemo):
         output_dir = _output_dir(create=False)
         if not output_dir.exists():
             return []
+        history_paths = []
+        for pattern in ("voice_design_*.wav", "irodori_design_*.wav", "irodori_history_reuse_*.wav"):
+            history_paths.extend(output_dir.glob(pattern))
         choices = []
-        for path in sorted(output_dir.glob("voice_design_*.wav"), key=lambda p: p.stat().st_mtime, reverse=True)[:50]:
+        for path in sorted(set(history_paths), key=lambda p: p.stat().st_mtime, reverse=True)[:50]:
             timestamp = datetime.fromtimestamp(path.stat().st_mtime).strftime("%m/%d %H:%M")
             choices.append((f"{timestamp} - {path.name}", str(path)))
         return choices
@@ -886,7 +997,38 @@ def create_demo_interface(demo: VoxCPMDemo):
         logger.info(f"Saved generated WAV for download: {output_path}")
         return str(output_path)
 
+    def _generate_irodori_for_download(
+        text: str,
+        prefix: str,
+        filename_hint: str = "",
+        reference_wav: Optional[str] = None,
+        style_features: Optional[list[str]] = None,
+        control_instruction: str = "",
+    ):
+        temp_path = _output_dir() / f"_irodori_tmp_{uuid4().hex[:8]}.wav"
+        styled_text = _build_irodori_style_text(text, style_features, control_instruction)
+        try:
+            sr, wav_np = demo.generate_irodori_audio(
+                text_input=styled_text,
+                output_wav_path=str(temp_path),
+                reference_wav_path_input=reference_wav,
+            )
+            output_path = _save_wav_for_download(sr, wav_np, prefix, filename_hint)
+            return (sr, wav_np), output_path
+        finally:
+            try:
+                if temp_path.exists():
+                    temp_path.unlink()
+            except OSError:
+                pass
+
+    def _engine_status(engine_label: str):
+        if _engine_is_irodori(engine_label):
+            return demo.irodori_status()
+        return "VoxCPM2を使用します。多言語、声のデザイン、声のクローン、高精度クローンに対応しています。"
+
     def _generate_design(
+        engine_label: str,
         text: str,
         voice_age: str,
         voice_gender: str,
@@ -900,6 +1042,17 @@ def create_demo_interface(demo: VoxCPMDemo):
         do_normalize: bool,
         dit_steps: int,
     ):
+        if _engine_is_irodori(engine_label):
+            _ensure_irodori_japanese(target_language)
+            audio, output_path = _generate_irodori_for_download(
+                text=text,
+                prefix="irodori_design",
+                filename_hint=filename_hint,
+                style_features=voice_features,
+                control_instruction=control_instruction,
+            )
+            return audio, output_path, gr.update(choices=_list_voice_design_history(), value=None)
+
         control_prompt = _combine_voice_profile_prompt(
             voice_age,
             voice_gender,
@@ -957,6 +1110,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         raise ValueError(f"{feature_label}には参照音声をアップロードするか、声のデザイン履歴から選んでください。")
 
     def _generate_from_design_history(
+        engine_label: str,
         history_wav: Optional[str],
         text: str,
         target_language: str,
@@ -967,6 +1121,14 @@ def create_demo_interface(demo: VoxCPMDemo):
     ):
         if not history_wav:
             raise ValueError("再利用する声を履歴から選んでください。")
+        if _engine_is_irodori(engine_label):
+            _ensure_irodori_japanese(target_language)
+            return _generate_irodori_for_download(
+                text=text,
+                prefix="irodori_history_reuse",
+                filename_hint=filename_hint,
+                reference_wav=history_wav,
+            )
         sr, wav_np = demo.generate_tts_audio(
             text_input=text,
             control_instruction="",
@@ -983,6 +1145,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         return (sr, wav_np), _save_wav_for_download(sr, wav_np, "voice_design_reuse", filename_hint)
 
     def _generate_clone(
+        engine_label: str,
         text: str,
         control_instruction: str,
         intonation_instruction: str,
@@ -997,6 +1160,15 @@ def create_demo_interface(demo: VoxCPMDemo):
         dit_steps: int,
     ):
         ref_source = _resolve_reference_audio(ref_wav, history_wav, "声のクローン")
+        if _engine_is_irodori(engine_label):
+            _ensure_irodori_japanese(target_language)
+            return _generate_irodori_for_download(
+                text=text,
+                prefix="irodori_clone",
+                filename_hint=filename_hint,
+                reference_wav=ref_source,
+                control_instruction=control_instruction,
+            )
         sr, wav_np = demo.generate_tts_audio(
             text_input=text,
             control_instruction=control_instruction,
@@ -1013,6 +1185,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         return (sr, wav_np), _save_wav_for_download(sr, wav_np, "voice_clone", filename_hint)
 
     def _generate_high_fidelity_clone(
+        engine_label: str,
         text: str,
         ref_wav: Optional[str],
         history_wav: Optional[str],
@@ -1028,6 +1201,8 @@ def create_demo_interface(demo: VoxCPMDemo):
         dit_steps: int,
     ):
         ref_source = _resolve_reference_audio(ref_wav, history_wav, "高精度クローン")
+        if _engine_is_irodori(engine_label):
+            raise ValueError("Irodori-TTSは高精度クローン（参照音声+文字起こしの連続生成）には未対応です。声のクローンタブでIrodori-TTSを使ってください。")
         if not prevent_leading_mix and not (prompt_text_value or "").strip():
             raise ValueError("文字起こしを使う場合は、参照音声の文字起こしが必要です。")
         sr, wav_np = demo.generate_tts_audio(
@@ -1270,6 +1445,15 @@ def create_demo_interface(demo: VoxCPMDemo):
         gr.Markdown("## JPVoxCPM WebUI\n**日本語で使いやすい VoxCPM2 音声生成・声クローンWeb UIです。**")
         gr.Markdown("**用途に合わせてモードを選んでください。** 各画面には、その生成方法に必要な入力だけを表示しています。")
 
+        with gr.Accordion("音声エンジン", open=True):
+            engine_selector = gr.Radio(
+                choices=_ENGINE_LABELS,
+                value=_ENGINE_VOXCPM,
+                label="音声エンジン",
+                info="Irodori-TTSは日本語専用の実験対応です。未セットアップ時は案内を表示します。",
+            )
+            engine_status = gr.Markdown(_engine_status(_ENGINE_VOXCPM))
+
         with gr.Accordion("保存先フォルダ", open=True):
             output_dir_global = gr.Textbox(
                 value=str(_output_dir()),
@@ -1382,6 +1566,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 design_btn.click(
                     fn=_generate_design,
                     inputs=[
+                        engine_selector,
                         design_text,
                         design_voice_age,
                         design_voice_gender,
@@ -1415,6 +1600,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 design_reuse_btn.click(
                     fn=_generate_from_design_history,
                     inputs=[
+                        engine_selector,
                         design_history,
                         design_reuse_text,
                         design_language,
@@ -1487,6 +1673,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 clone_btn.click(
                     fn=_generate_clone,
                     inputs=[
+                        engine_selector,
                         clone_text,
                         clone_control,
                         clone_intonation,
@@ -1614,6 +1801,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 hifi_btn.click(
                     fn=_generate_high_fidelity_clone,
                     inputs=[
+                        engine_selector,
                         hifi_text,
                         hifi_ref,
                         hifi_history,
@@ -1632,6 +1820,14 @@ def create_demo_interface(demo: VoxCPMDemo):
                     show_progress=True,
                     api_name="high_fidelity_clone",
                 )
+
+        engine_selector.change(
+            fn=_engine_status,
+            inputs=[engine_selector],
+            outputs=[engine_status],
+            show_progress=False,
+            api_name=False,
+        )
 
         output_dir_apply.click(
             fn=_set_output_dir,

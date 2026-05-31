@@ -67,6 +67,18 @@ powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda
 
 `pretrained_models/` は巨大ファイルなのでGitHubには含めません。
 
+## Irodori-TTSを追加する場合
+
+Irodori-TTSは日本語特化の任意エンジンです。VoxCPM2とは依存関係が異なるため、別フォルダ `external/Irodori-TTS/` にセットアップします。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_irodori_tts.ps1
+```
+
+完了後にWeb UIを再起動し、画面上部の「音声エンジン」で `Irodori-TTS（日本語特化・実験）` を選びます。
+
+Irodori-TTSは日本語専用です。多言語生成や高精度クローンを使う場合は `VoxCPM2（総合）` を選んでください。
+
 ## 主な使い方
 
 - 声のデザイン: 参照音声なしで声を作る
@@ -74,6 +86,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda
 - 声のクローン: 参照音声の声質で別テキストを読む
 - 高精度クローン: 参照音声と文字起こしを使って再現度を上げる
 - 発話言語: テキストの発話言語を指定する
+- 音声エンジン: VoxCPM2とIrodori-TTSを切り替える
 - 単語アクセントを指定: `イチゴ=語尾上げ` のように単語ごとの読み方を補助する
 - 記号で読み方を調整: `「」`、`、`、`……`、`！`、`？` を本文に挿入する
 
