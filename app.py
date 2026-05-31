@@ -788,7 +788,11 @@ class VoxCPMDemo:
             return f"Irodori-TTSの `infer.py` が見つかりません: {project_dir}"
         if shutil.which("uv") is None:
             return "`uv` コマンドが見つかりません。Irodori-TTSの実行にはuvが必要です。"
-        return f"Irodori-TTSを利用できます: {project_dir}"
+        return (
+            "Irodori-TTSを使用します。日本語に特化した音声生成・参照音声クローンに対応しています。"
+            "多言語発話、VoxCPM2の高精度クローン、自由文による細かな声の指示は未対応です。"
+            f"\n\nセットアップ済み: `{project_dir}`"
+        )
 
     def generate_irodori_audio(
         self,
