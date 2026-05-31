@@ -1229,6 +1229,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         setTimeout(apply, 100);
         setTimeout(apply, 500);
         setTimeout(apply, 1200);
+        return [engineLabel];
     }
     """
 
