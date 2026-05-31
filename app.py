@@ -1205,8 +1205,32 @@ def create_demo_interface(demo: VoxCPMDemo):
             voxcpm_only,
             voxcpm_only,
             voxcpm_only,
+            voxcpm_only,
             irodori_only,
         )
+
+    _engine_tab_visibility_js = """
+    (engineLabel) => {
+        const apply = () => {
+            const isIrodori = String(engineLabel || "").startsWith("Irodori-TTS");
+            const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+            const hifiTab = tabs.find((tab) => (tab.textContent || "").includes("高精度クローン"));
+            if (!hifiTab) return;
+            hifiTab.style.display = isIrodori ? "none" : "";
+            hifiTab.setAttribute("aria-hidden", isIrodori ? "true" : "false");
+            if (isIrodori && hifiTab.getAttribute("aria-selected") === "true") {
+                const fallbackTab =
+                    tabs.find((tab) => (tab.textContent || "").includes("声のクローン")) ||
+                    tabs.find((tab) => (tab.textContent || "").includes("声のデザイン"));
+                if (fallbackTab) fallbackTab.click();
+            }
+        };
+        apply();
+        setTimeout(apply, 100);
+        setTimeout(apply, 500);
+        setTimeout(apply, 1200);
+    }
+    """
 
     def _generate_design(
         engine_label: str,
@@ -2054,6 +2078,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             clone_word_accent_group,
             clone_prosody_group,
             clone_advanced_group,
+            hifi_tab,
             hifi_voxcpm_group,
             hifi_irodori_notice,
         ]
@@ -2062,6 +2087,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             fn=_engine_visibility_updates,
             inputs=[engine_selector],
             outputs=engine_visibility_outputs,
+            js=_engine_tab_visibility_js,
             show_progress=False,
             api_name=None,
             api_visibility="private",
