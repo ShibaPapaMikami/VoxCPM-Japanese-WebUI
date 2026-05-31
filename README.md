@@ -37,11 +37,13 @@ uvがない場合:
 winget install --id Astral-sh.UV
 ```
 
-## 最短起動
+## クイックスタート
 
-PowerShellでリポジトリ直下に移動して実行します。
+PowerShellで以下を実行します。初回は依存関係とVoxCPM2モデルの取得に時間がかかります。
 
 ```powershell
+git clone https://github.com/ShibaPapaMikami/VoxCPM-Japanese-WebUI.git
+cd VoxCPM-Japanese-WebUI
 powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda.ps1
 ```
 
@@ -51,7 +53,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda
 http://127.0.0.1:8808/
 ```
 
-2回目以降、セットアップ済みなら依存関係の再インストールを省略できます。
+### 2回目以降
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda.ps1 -SkipSetup
@@ -63,25 +65,37 @@ powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda
 .\VoxCPM_WebUI.cmd
 ```
 
-詳しい手順は [README_SETUP_JA.md](README_SETUP_JA.md) を参照してください。
+### Irodori-TTSも使う場合
 
-## 社内LANから使う場合
+VoxCPM2だけ使う場合は不要です。日本語特化エンジンのIrodori-TTSも使う場合だけ、追加で実行します。
 
-同じLAN内の別端末からアクセスする場合は、起動PCのIPアドレスを使います。
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_irodori_tts.ps1
+```
+
+完了後にWeb UIを再起動し、画面上部の「音声エンジン」で `Irodori-TTS（日本語特化・実験）` を選びます。
+
+### LAN内の別端末から使う場合
+
+同じLAN内の別端末からアクセスする場合は、起動PCで以下のように起動します。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda.ps1 -HostAddress 0.0.0.0
 ```
 
+別端末のブラウザで開きます。
+
 ```text
 http://<起動PCのIPアドレス>:8808/
 ```
 
-必要に応じてWindowsファイアウォールで8808番ポートを許可します。既定ではプライベートネットワークだけを許可します。
+必要に応じてWindowsファイアウォールで8808番ポートを許可します。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\allow_firewall_8808.ps1
 ```
+
+詳しい手順は [README_SETUP_JA.md](README_SETUP_JA.md) を参照してください。
 
 ## モデルについて
 
@@ -92,15 +106,9 @@ powershell -ExecutionPolicy Bypass -File scripts\allow_firewall_8808.ps1
 
 ### Irodori-TTSを使う場合
 
-Irodori-TTSは任意の追加エンジンです。依存関係の競合を避けるため、このWeb UI本体とは別フォルダにセットアップします。
+Irodori-TTSは任意の追加エンジンです。依存関係の競合を避けるため、このWeb UI本体とは別フォルダ `external/Irodori-TTS/` にセットアップします。手順は上の「Irodori-TTSも使う場合」を参照してください。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\setup_irodori_tts.ps1
-```
-
-セットアップ後にWeb UIを再起動し、画面上部の「音声エンジン」で `Irodori-TTS（日本語特化・実験）` を選びます。
-
-Irodori-TTSは日本語専用です。多言語、VoxCPM2の高精度クローン、自然文による声デザインを使う場合は、既定の `VoxCPM2（総合）` を使ってください。
+Irodori-TTSは日本語専用です。多言語、VoxCPM2の高精度クローン、自由文による細かな声の指示を使う場合は、既定の `VoxCPM2（総合）` を使ってください。
 
 ## 公開・配布について
 

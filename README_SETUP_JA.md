@@ -1,6 +1,6 @@
-# JPVoxCPM WebUI セットアップ
+# JP Voice Studio セットアップ
 
-JPVoxCPM WebUIは、OpenBMB/VoxCPM をベースに、日本語UI、声のデザイン履歴、WAVダウンロード、多言語選択、高精度クローン補助などを追加した社内向けWeb UIです。
+JP Voice Studioは、OpenBMB/VoxCPM をベースに、日本語UI、声のデザイン履歴、WAVダウンロード、多言語選択、高精度クローン補助などを追加した音声生成・声クローン統合ツールです。任意の追加エンジンとして Irodori-TTS も利用できます。
 
 ## 対象環境
 
@@ -19,9 +19,11 @@ winget install --id Astral-sh.UV
 
 ## 最短起動
 
-PowerShellでリポジトリ直下に移動して実行します。
+PowerShellで以下を実行します。
 
 ```powershell
+git clone https://github.com/ShibaPapaMikami/VoxCPM-Japanese-WebUI.git
+cd VoxCPM-Japanese-WebUI
 powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda.ps1
 ```
 
