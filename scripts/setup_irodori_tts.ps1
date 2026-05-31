@@ -12,16 +12,29 @@ if ([string]::IsNullOrWhiteSpace($InstallDir)) {
 Write-Host "JPVoxCPM WebUI - Irodori-TTS setup"
 Write-Host "Install dir: $InstallDir"
 
+$env:GIT_SSL_BACKEND = "schannel"
+$env:GIT_CONFIG_COUNT = "1"
+$env:GIT_CONFIG_KEY_0 = "http.sslBackend"
+$env:GIT_CONFIG_VALUE_0 = "schannel"
+$env:UV_NATIVE_TLS = "true"
+
 $parent = Split-Path -Parent $InstallDir
 if (-not (Test-Path $parent)) {
     New-Item -ItemType Directory -Path $parent | Out-Null
 }
 
 if (-not (Test-Path $InstallDir)) {
-    git clone https://github.com/Aratako/Irodori-TTS.git $InstallDir
+    git -c http.sslBackend=schannel clone https://github.com/Aratako/Irodori-TTS.git $InstallDir
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to clone Irodori-TTS repository."
+    }
 }
 else {
     Write-Host "Irodori-TTS directory already exists. Skipping clone."
+}
+
+if (-not (Test-Path (Join-Path $InstallDir "infer.py"))) {
+    throw "Irodori-TTS clone did not complete correctly. Missing infer.py in $InstallDir"
 }
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
@@ -32,6 +45,13 @@ if (-not $SkipSync) {
     Push-Location $InstallDir
     try {
         uv sync --extra cu128
+        if ($LASTEXITCODE -ne 0) {
+            throw "uv sync failed."
+        }
+        uv pip install truststore
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to install truststore into the Irodori-TTS environment."
+        }
     }
     finally {
         Pop-Location

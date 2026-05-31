@@ -748,7 +748,7 @@ class VoxCPMDemo:
             uv_path,
             "run",
             "python",
-            "infer.py",
+            str(Path.cwd() / "scripts" / "run_irodori_infer.py"),
             "--hf-checkpoint",
             "Aratako/Irodori-TTS-500M-v3",
             "--text",
@@ -762,12 +762,23 @@ class VoxCPMDemo:
             command.append("--no-ref")
 
         logger.info("Running Irodori-TTS inference...")
+        env = os.environ.copy()
+        env.update(
+            {
+                "UV_NATIVE_TLS": "true",
+                "GIT_SSL_BACKEND": "schannel",
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "http.sslBackend",
+                "GIT_CONFIG_VALUE_0": "schannel",
+            }
+        )
         result = subprocess.run(
             command,
             cwd=str(project_dir),
             capture_output=True,
             text=True,
             timeout=900,
+            env=env,
         )
         if result.returncode != 0:
             detail = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
@@ -1595,7 +1606,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                     inputs=[design_history],
                     outputs=[design_history, design_history_status],
                     show_progress=False,
-                    api_name=False,
+                    api_name=None,
+                    api_visibility="private",
                 )
                 design_reuse_btn.click(
                     fn=_generate_from_design_history,
@@ -1702,7 +1714,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                     inputs=[clone_history],
                     outputs=[clone_history, clone_history_status],
                     show_progress=False,
-                    api_name=False,
+                    api_name=None,
+                    api_visibility="private",
                 )
 
             with gr.Tab("高精度クローン"):
@@ -1796,7 +1809,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                     inputs=[hifi_history],
                     outputs=[hifi_history, hifi_history_status],
                     show_progress=False,
-                    api_name=False,
+                    api_name=None,
+                    api_visibility="private",
                 )
                 hifi_btn.click(
                     fn=_generate_high_fidelity_clone,
@@ -1826,7 +1840,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             inputs=[engine_selector],
             outputs=[engine_status],
             show_progress=False,
-            api_name=False,
+            api_name=None,
+            api_visibility="private",
         )
 
         output_dir_apply.click(
@@ -1843,14 +1858,16 @@ def create_demo_interface(demo: VoxCPMDemo):
                 output_dir_status,
             ],
             show_progress=False,
-            api_name=False,
+            api_name=None,
+            api_visibility="private",
         )
         output_dir_open.click(
             fn=_open_output_dir,
             inputs=[output_dir_global],
             outputs=[output_dir_status],
             show_progress=False,
-            api_name=False,
+            api_name=None,
+            api_visibility="private",
         )
 
     return interface
