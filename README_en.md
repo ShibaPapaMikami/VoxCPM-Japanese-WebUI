@@ -1,8 +1,10 @@
-<h2 align="center">JPVoxCPM WebUI</h2>
+<h2 align="center">JP Voice Studio</h2>
 
-<p align="center">A Japanese-friendly VoxCPM2 Web UI for speech generation, voice design, and voice cloning.</p>
+<p align="center">A Japanese-friendly speech generation and voice cloning studio based on VoxCPM2, with optional Irodori-TTS support.</p>
 
 > **Japanese Windows Web UI fork:** This repository includes a Japanese Gradio UI, Windows CUDA setup scripts, voice design history reuse, explicit WAV download, multilingual controls, and voice cloning workflow improvements. It is based on [OpenBMB/VoxCPM](https://github.com/OpenBMB/VoxCPM) and is not an official OpenBMB project.
+>
+> Third-party licenses and voice-use notices are summarized in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 >
 > 日本語セットアップ手順は [README_SETUP_JA.md](README_SETUP_JA.md) を参照してください。
 >

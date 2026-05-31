@@ -23,12 +23,15 @@
 
 ## ライセンス表記
 
-OpenBMB/VoxCPM と VoxCPM2 は Apache-2.0 ライセンスです。公開リポジトリでは `LICENSE` を残し、READMEに以下のような説明を入れてください。
+OpenBMB/VoxCPM と VoxCPM2 は Apache-2.0 ライセンスです。Irodori-TTS、Irodori-TTS-500M-v3、Semantic-DACVAE-Japanese-32dim はMITライセンスです。
+
+公開リポジトリでは `LICENSE` と [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) を残し、READMEに以下のような説明を入れてください。
 
 ```text
-JPVoxCPM WebUI is based on OpenBMB/VoxCPM and includes local UI/Windows setup modifications.
+JP Voice Studio is an unofficial Japanese Web UI and integration layer based on OpenBMB/VoxCPM, with optional Irodori-TTS support.
 Original project: https://github.com/OpenBMB/VoxCPM
-License: Apache-2.0
+OpenBMB/VoxCPM and VoxCPM2: Apache-2.0
+Irodori-TTS and related optional Irodori models/codecs: MIT
 ```
 
 ## READMEに入れる推奨注意書き
