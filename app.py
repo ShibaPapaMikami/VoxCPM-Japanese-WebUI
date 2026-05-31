@@ -1648,6 +1648,66 @@ def create_demo_interface(demo: VoxCPMDemo):
             )
         return denoise_control, normalize_control, cfg_control, steps_control
 
+    _RECORDING_SCRIPT_PRESETS = {
+        "落ち着いたナレーション": (
+            "こんにちは。今日は音声生成のための参照音声を録音しています。"
+            "普段の声で、少しゆっくり、はっきりと話します。"
+            "静かな場所で録音すると、声の特徴がより伝わりやすくなります。"
+        ),
+        "自然な会話": (
+            "こんにちは、調子はいかがですか。"
+            "今日は新しい音声ツールを試しています。"
+            "短い文章でも、自然な間を入れて話すと、声の雰囲気が分かりやすくなります。"
+        ),
+        "明るい案内": (
+            "お知らせします。こちらは音声クローン用のテスト録音です。"
+            "明るく聞き取りやすい声で、最後まで同じ距離を保って話します。"
+            "ご利用ありがとうございます。"
+        ),
+        "聞き取り確認": (
+            "数字の一、二、三、曜日の月曜日、火曜日、水曜日を読み上げます。"
+            "短い言葉と長い言葉を混ぜて、声の高さや話す速さを確認します。"
+            "これで録音を終了します。"
+        ),
+    }
+    _RECORDING_SCRIPT_LABELS = list(_RECORDING_SCRIPT_PRESETS.keys())
+    _DEFAULT_RECORDING_SCRIPT_LABEL = "落ち着いたナレーション"
+
+    def _recording_script_for_preset(preset_label: str) -> str:
+        return _RECORDING_SCRIPT_PRESETS.get(preset_label, _RECORDING_SCRIPT_PRESETS[_DEFAULT_RECORDING_SCRIPT_LABEL])
+
+    def _copy_recording_script_to_prompt(script: str):
+        script = (script or "").strip()
+        if not script:
+            return gr.update(), "録音原稿が空です。原稿を選ぶか入力してから反映してください。"
+        return script, "録音原稿を参照音声の文字起こし欄へ入れました。録音で読んだ内容と一致しているか確認してください。"
+
+    def _add_reference_recording_guide(open_default: bool = False):
+        with gr.Accordion("参照音声を録音する", open=open_default):
+            gr.Markdown(
+                "目安は5〜30秒です。静かな場所で、BGMなし、1人の声だけを録音してください。"
+                "声を作り込みすぎず、普段の話し方で読むと安定しやすくなります。"
+            )
+            preset = gr.Dropdown(
+                choices=_RECORDING_SCRIPT_LABELS,
+                value=_DEFAULT_RECORDING_SCRIPT_LABEL,
+                label="録音原稿プリセット",
+            )
+            script = gr.Textbox(
+                value=_recording_script_for_preset(_DEFAULT_RECORDING_SCRIPT_LABEL),
+                label="録音で読む原稿",
+                lines=5,
+            )
+            preset.change(
+                fn=_recording_script_for_preset,
+                inputs=[preset],
+                outputs=[script],
+                show_progress=False,
+                api_name=None,
+                api_visibility="private",
+            )
+        return preset, script
+
     with gr.Blocks(title="JP Voice Studio") as interface:
         app_header = gr.HTML(_app_header_html(_ENGINE_VOXCPM))
         gr.Markdown("**用途に合わせてモードを選んでください。** 各画面には、その生成方法に必要な入力だけを表示しています。")
@@ -1832,8 +1892,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                         clone_ref = gr.Audio(
                             sources=["upload", "microphone"],
                             type="filepath",
-                            label="参照音声",
+                            label="参照音声（アップロード / マイク録音）",
                         )
+                        _, clone_recording_script = _add_reference_recording_guide(open_default=True)
                         clone_history = gr.Dropdown(
                             choices=_list_voice_design_history(),
                             value=None,
@@ -1957,7 +2018,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                             hifi_ref = gr.Audio(
                                 sources=["upload", "microphone"],
                                 type="filepath",
-                                label="参照音声",
+                                label="参照音声（アップロード / マイク録音）",
                             )
                             hifi_history = gr.Dropdown(
                                 choices=_list_voice_design_history(),
@@ -1966,6 +2027,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 info="参照音声をアップロードしていない場合、この履歴の声を使います。",
                             )
                             hifi_history_refresh = gr.Button("履歴を更新", variant="secondary", size="sm")
+                            _, hifi_recording_script = _add_reference_recording_guide(open_default=True)
+                            hifi_script_to_prompt_btn = gr.Button("録音原稿を文字起こし欄へ入れる", variant="secondary")
                             hifi_language = _language_dropdown()
                             hifi_prompt_text = gr.Textbox(
                                 value="",
@@ -2025,6 +2088,14 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[hifi_prompt_text, hifi_transcribe_status],
                     show_progress=True,
                     api_name="transcribe_reference",
+                )
+                hifi_script_to_prompt_btn.click(
+                    fn=_copy_recording_script_to_prompt,
+                    inputs=[hifi_recording_script],
+                    outputs=[hifi_prompt_text, hifi_transcribe_status],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
                 )
                 hifi_history_refresh.click(
                     fn=_refresh_voice_design_history,
