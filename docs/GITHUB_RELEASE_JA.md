@@ -29,7 +29,7 @@ OpenBMB/VoxCPM と VoxCPM2 は Apache-2.0 ライセンスです。Irodori-TTS、
 公開リポジトリでは `LICENSE` と [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) を残し、READMEに以下のような説明を入れてください。
 
 ```text
-JP Voice Studio is an unofficial Japanese Web UI and integration layer based on OpenBMB/VoxCPM, with optional Irodori-TTS and Qwen3-TTS support.
+JP Voice Studio is an unofficial Japanese Web UI and integration layer based on OpenBMB/VoxCPM, with optional Irodori-TTS and simplified VoiceDesignCloner/Qwen3-TTS workflow support.
 Original project: https://github.com/OpenBMB/VoxCPM
 OpenBMB/VoxCPM and VoxCPM2: Apache-2.0
 Irodori-TTS and related optional Irodori models/codecs: MIT

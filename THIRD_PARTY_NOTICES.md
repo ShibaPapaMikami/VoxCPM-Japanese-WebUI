@@ -13,9 +13,9 @@ This project, JP Voice Studio, is an unofficial Japanese Web UI and integration 
 | Aratako/Irodori-TTS | Optional Japanese-specialized TTS engine | https://github.com/Aratako/Irodori-TTS | MIT |
 | Irodori-TTS-500M-v3 | Optional Irodori model checkpoint | https://huggingface.co/Aratako/Irodori-TTS-500M-v3 | MIT |
 | Semantic-DACVAE-Japanese-32dim | Codec used by Irodori-TTS | https://huggingface.co/Aratako/Semantic-DACVAE-Japanese-32dim | MIT |
-| Qwen3-TTS models | Optional multilingual voice design and voice cloning engine | https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign | Apache-2.0 |
+| Qwen3-TTS models | Optional multilingual voice design and simple one-line voice cloning engine | https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign | Apache-2.0 |
 | qwen-tts | Optional Python package used to run Qwen3-TTS | https://pypi.org/project/qwen-tts/ | Apache-2.0 |
-| reinehonoka/Voice-Design-Cloner | Reference implementation for Qwen3-TTS voice design / clone workflows | https://github.com/reinehonoka/Voice-Design-Cloner | MIT |
+| reinehonoka/Voice-Design-Cloner | Reference implementation for Qwen3-TTS voice design / clone workflows; full app features are not bundled | https://github.com/reinehonoka/Voice-Design-Cloner | MIT |
 | Gradio | Local Web UI framework | https://github.com/gradio-app/gradio | Apache-2.0 |
 
 ## License Summary

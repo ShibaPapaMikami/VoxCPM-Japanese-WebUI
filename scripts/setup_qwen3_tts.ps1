@@ -43,4 +43,4 @@ finally {
 
 Write-Host ""
 Write-Host "Qwen3-TTS setup finished."
-Write-Host "Restart JP Voice Studio, then select the Qwen3-TTS engine in the audio engine selector."
+Write-Host "Restart JP Voice Studio, then select the VoiceDesignCloner/Qwen3-TTS integration engine."

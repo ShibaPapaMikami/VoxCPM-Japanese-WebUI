@@ -443,7 +443,7 @@ _VOICE_FEATURE_LABELS = [
 
 _ENGINE_VOXCPM = "VoxCPM2（総合）"
 _ENGINE_IRODORI = "Irodori-TTS（日本語特化・実験）"
-_ENGINE_QWEN3 = "Qwen3-TTS（声デザイン・多言語・実験）"
+_ENGINE_QWEN3 = "VoiceDesignCloner連携（Qwen3-TTS・簡易）"
 _ENGINE_LABELS = [_ENGINE_VOXCPM, _ENGINE_IRODORI, _ENGINE_QWEN3]
 
 
@@ -514,7 +514,8 @@ def _engine_is_irodori(engine_label: str) -> bool:
 
 
 def _engine_is_qwen3(engine_label: str) -> bool:
-    return (engine_label or "").startswith("Qwen3-TTS")
+    label = engine_label or ""
+    return label.startswith("VoiceDesignCloner連携") or label.startswith("Qwen3-TTS")
 
 
 def _ensure_irodori_japanese(target_language: str) -> None:
@@ -908,13 +909,14 @@ class VoxCPMDemo:
             return f"Qwen3-TTS実行ラッパーが見つかりません: {wrapper_path}"
         if not has_qwen:
             return (
-                "Qwen3-TTSは未セットアップです。PowerShellで "
+                "VoiceDesignCloner連携（Qwen3-TTS・簡易）は未セットアップです。PowerShellで "
                 "`scripts\\setup_qwen3_tts.ps1` を実行してください。"
             )
         return (
-            "Qwen3-TTSを使用します。Voice-Design-Clonerで採用されているQwen3-TTS系の音声生成を、"
-            "このWeb UIから呼び出します。多言語の声デザインと、参照音声+文字起こしによる声のクローンに対応しています。"
-            "VoxCPM2の高精度クローンとIrodori-TTSのLoRA学習は未対応です。"
+            "VoiceDesignCloner連携（Qwen3-TTS・簡易）を使用します。Voice-Design-ClonerのQwen3-TTSワークフローを参考に、"
+            "多言語の声デザインと、参照音声+文字起こしによる1文ずつの簡易クローンに対応しています。"
+            "VoiceDesignCloner本体のコーパス一括音声化、声ガチャ専用UI、Irodori-TTS LoRA学習、"
+            "リサンプル、esd.list生成、Style-Bert-VITS2向け一括前処理はまだ統合していません。"
         )
 
     def generate_qwen3_audio(
@@ -1401,8 +1403,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             logo_html = '<div class="text-logo">Irodori-TTS<span>日本語TTS</span></div>'
             engine_label_text = "Irodori-TTS"
         elif _engine_is_qwen3(engine_label):
-            logo_html = '<div class="text-logo">Qwen3-TTS<span>Voice Design</span></div>'
-            engine_label_text = "Qwen3-TTS"
+            logo_html = '<div class="text-logo">VDC<span>Qwen3-TTS 簡易連携</span></div>'
+            engine_label_text = "VoiceDesignCloner連携"
         else:
             logo_html = '<img src="/gradio_api/file=assets/voxcpm_logo.png" alt="VoxCPM2 Logo">'
             engine_label_text = "VoxCPM2"
@@ -1451,7 +1453,8 @@ def create_demo_interface(demo: VoxCPMDemo):
     (engineLabel) => {
         const apply = () => {
             const isIrodori = String(engineLabel || "").startsWith("Irodori-TTS");
-            const isQwen3 = String(engineLabel || "").startsWith("Qwen3-TTS");
+            const label = String(engineLabel || "");
+            const isQwen3 = label.startsWith("VoiceDesignCloner連携") || label.startsWith("Qwen3-TTS");
             const hideHifi = isIrodori || isQwen3;
             const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
             const hifiTab = tabs.find((tab) => (tab.textContent || "").includes("高精度クローン"));
