@@ -443,7 +443,8 @@ _VOICE_FEATURE_LABELS = [
 
 _ENGINE_VOXCPM = "VoxCPM2（総合）"
 _ENGINE_IRODORI = "Irodori-TTS（日本語特化・実験）"
-_ENGINE_LABELS = [_ENGINE_VOXCPM, _ENGINE_IRODORI]
+_ENGINE_QWEN3 = "Qwen3-TTS（声デザイン・多言語・実験）"
+_ENGINE_LABELS = [_ENGINE_VOXCPM, _ENGINE_IRODORI, _ENGINE_QWEN3]
 
 
 # ---------- Model ----------
@@ -512,9 +513,38 @@ def _engine_is_irodori(engine_label: str) -> bool:
     return (engine_label or "").startswith("Irodori-TTS")
 
 
+def _engine_is_qwen3(engine_label: str) -> bool:
+    return (engine_label or "").startswith("Qwen3-TTS")
+
+
 def _ensure_irodori_japanese(target_language: str) -> None:
     if target_language and target_language not in ("自動（テキストから判定）", "日本語"):
         raise ValueError("Irodori-TTSは日本語専用です。発話言語を日本語または自動にしてください。")
+
+
+def _qwen3_language_name(target_language: str) -> str:
+    language_name = _LANGUAGE_HINTS.get(target_language or "", "")
+    language_map = {
+        "Japanese": "japanese",
+        "English": "english",
+        "Chinese": "chinese",
+        "Korean": "korean",
+        "German": "german",
+        "French": "french",
+        "Spanish": "spanish",
+        "Italian": "italian",
+        "Portuguese": "portuguese",
+        "Russian": "russian",
+    }
+    if not language_name:
+        return "auto"
+    qwen_language = language_map.get(language_name)
+    if not qwen_language:
+        raise ValueError(
+            "Qwen3-TTSで選べる発話言語は、日本語・英語・中国語・韓国語・ドイツ語・"
+            "フランス語・スペイン語・イタリア語・ポルトガル語・ロシア語です。"
+        )
+    return qwen_language
 
 
 def _build_irodori_style_text(
@@ -865,6 +895,98 @@ class VoxCPMDemo:
             raise RuntimeError("Irodori-TTSの生成は完了しましたが、出力WAVが見つかりませんでした。")
         return processing_utils.audio_from_file(str(output_path))
 
+    def qwen3_status(self) -> str:
+        try:
+            import importlib.util
+
+            has_qwen = importlib.util.find_spec("qwen_tts") is not None
+        except Exception:
+            has_qwen = False
+
+        wrapper_path = Path.cwd() / "scripts" / "run_qwen3_tts_infer.py"
+        if not wrapper_path.exists():
+            return f"Qwen3-TTS実行ラッパーが見つかりません: {wrapper_path}"
+        if not has_qwen:
+            return (
+                "Qwen3-TTSは未セットアップです。PowerShellで "
+                "`scripts\\setup_qwen3_tts.ps1` を実行してください。"
+            )
+        return (
+            "Qwen3-TTSを使用します。Voice-Design-Clonerで採用されているQwen3-TTS系の音声生成を、"
+            "このWeb UIから呼び出します。多言語の声デザインと、参照音声+文字起こしによる声のクローンに対応しています。"
+            "VoxCPM2の高精度クローンとIrodori-TTSのLoRA学習は未対応です。"
+        )
+
+    def generate_qwen3_audio(
+        self,
+        *,
+        mode: str,
+        text_input: str,
+        output_wav_path: str,
+        language_input: str,
+        instruct_input: str = "",
+        reference_wav_path_input: Optional[str] = None,
+        reference_text_input: str = "",
+    ) -> Tuple[int, np.ndarray]:
+        text = (text_input or "").strip()
+        if not text:
+            raise ValueError("読み上げテキストを入力してください。")
+        if mode == "clone" and not (reference_text_input or "").strip():
+            raise ValueError("Qwen3-TTSの声のクローンには、参照音声の文字起こしが必要です。")
+
+        wrapper_path = Path.cwd() / "scripts" / "run_qwen3_tts_infer.py"
+        if not wrapper_path.exists():
+            raise RuntimeError(f"Qwen3-TTS実行ラッパーが見つかりません: {wrapper_path}")
+
+        output_path = Path(output_wav_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        command = [
+            sys.executable,
+            str(wrapper_path),
+            "--mode",
+            mode,
+            "--text",
+            text,
+            "--output-wav",
+            str(output_path),
+            "--language",
+            language_input,
+        ]
+        instruct = (instruct_input or "").strip()
+        if instruct:
+            command.extend(["--instruct", instruct])
+        if reference_wav_path_input:
+            command.extend(["--ref-wav", str(reference_wav_path_input)])
+        ref_text = (reference_text_input or "").strip()
+        if ref_text:
+            command.extend(["--ref-text", ref_text])
+
+        logger.info("Running Qwen3-TTS inference...")
+        env = os.environ.copy()
+        env.update(
+            {
+                "UV_NATIVE_TLS": "true",
+                "GIT_SSL_BACKEND": "schannel",
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "http.sslBackend",
+                "GIT_CONFIG_VALUE_0": "schannel",
+            }
+        )
+        result = subprocess.run(
+            command,
+            cwd=str(Path.cwd()),
+            capture_output=True,
+            text=True,
+            timeout=900,
+            env=env,
+        )
+        if result.returncode != 0:
+            detail = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
+            raise RuntimeError(f"Qwen3-TTSの生成に失敗しました。\n{detail[-1200:]}")
+        if not output_path.exists():
+            raise RuntimeError("Qwen3-TTSの生成は完了しましたが、出力WAVが見つかりませんでした。")
+        return processing_utils.audio_from_file(str(output_path))
+
     def _build_generate_kwargs(
         self,
         *,
@@ -977,7 +1099,13 @@ def create_demo_interface(demo: VoxCPMDemo):
         if not output_dir.exists():
             return []
         history_paths = []
-        for pattern in ("voice_design_*.wav", "irodori_design_*.wav", "irodori_history_reuse_*.wav"):
+        for pattern in (
+            "voice_design_*.wav",
+            "irodori_design_*.wav",
+            "irodori_history_reuse_*.wav",
+            "qwen3_design_*.wav",
+            "qwen3_history_reuse_*.wav",
+        ):
             history_paths.extend(output_dir.glob(pattern))
         choices = []
         for path in sorted(set(history_paths), key=lambda p: p.stat().st_mtime, reverse=True)[:50]:
@@ -1086,6 +1214,26 @@ def create_demo_interface(demo: VoxCPMDemo):
         logger.info(f"Saved generated WAV for download: {output_path}")
         return str(output_path)
 
+    def _write_reference_text_sidecar(wav_path: str, text: str) -> None:
+        clean_text = (text or "").strip()
+        if not clean_text:
+            return
+        try:
+            Path(wav_path).with_suffix(".txt").write_text(clean_text, encoding="utf-8")
+        except Exception as e:
+            logger.warning("Failed to write reference text sidecar: %s", e)
+
+    def _read_reference_text_sidecar(wav_path: Optional[str]) -> str:
+        if not wav_path:
+            return ""
+        try:
+            sidecar = Path(wav_path).with_suffix(".txt")
+            if sidecar.exists():
+                return sidecar.read_text(encoding="utf-8").strip()
+        except Exception as e:
+            logger.warning("Failed to read reference text sidecar: %s", e)
+        return ""
+
     def _prepare_irodori_reference_wav(reference_wav: Optional[str]) -> tuple[Optional[str], Optional[Path]]:
         if not reference_wav:
             return None, None
@@ -1162,15 +1310,99 @@ def create_demo_interface(demo: VoxCPMDemo):
             except OSError:
                 pass
 
+    def _prepare_qwen3_reference_wav(reference_wav: Optional[str]) -> tuple[Optional[str], Optional[Path]]:
+        if not reference_wav:
+            return None, None
+        source_path = Path(reference_wav)
+        if source_path.suffix.lower() == ".wav":
+            return str(source_path), None
+
+        converted_path = _output_dir() / f"_qwen3_ref_{uuid4().hex[:8]}.wav"
+        ffmpeg_path = shutil.which("ffmpeg")
+        if ffmpeg_path:
+            command = [
+                ffmpeg_path,
+                "-y",
+                "-i",
+                str(source_path),
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "24000",
+                "-c:a",
+                "pcm_s16le",
+                str(converted_path),
+            ]
+            result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+            if result.returncode != 0:
+                detail = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
+                raise RuntimeError(f"Qwen3-TTS用の参照音声WAV変換に失敗しました。\n{detail[-800:]}")
+            return str(converted_path), converted_path
+
+        try:
+            import librosa
+            import soundfile as sf
+
+            wav_np, sr = librosa.load(str(source_path), sr=24000, mono=True)
+            sf.write(str(converted_path), wav_np, sr, subtype="PCM_16")
+            return str(converted_path), converted_path
+        except Exception as e:
+            raise RuntimeError(
+                "Qwen3-TTS用の参照音声WAV変換に失敗しました。"
+                "m4a/mp3などを使う場合はffmpegをインストールするか、参照音声をWAVでアップロードしてください。"
+                f" 詳細: {e}"
+            ) from e
+
+    def _generate_qwen3_for_download(
+        *,
+        mode: str,
+        text: str,
+        prefix: str,
+        filename_hint: str = "",
+        target_language: str = "日本語",
+        instruct: str = "",
+        reference_wav: Optional[str] = None,
+        reference_text: str = "",
+    ):
+        temp_path = _output_dir() / f"_qwen3_tmp_{uuid4().hex[:8]}.wav"
+        prepared_reference, converted_reference = _prepare_qwen3_reference_wav(reference_wav)
+        try:
+            sr, wav_np = demo.generate_qwen3_audio(
+                mode=mode,
+                text_input=text,
+                output_wav_path=str(temp_path),
+                language_input=_qwen3_language_name(target_language),
+                instruct_input=instruct,
+                reference_wav_path_input=prepared_reference,
+                reference_text_input=reference_text,
+            )
+            output_path = _save_wav_for_download(sr, wav_np, prefix, filename_hint)
+            _write_reference_text_sidecar(output_path, text)
+            return (sr, wav_np), output_path
+        finally:
+            try:
+                if temp_path.exists():
+                    temp_path.unlink()
+                if converted_reference and converted_reference.exists():
+                    converted_reference.unlink()
+            except OSError:
+                pass
+
     def _engine_status(engine_label: str):
         if _engine_is_irodori(engine_label):
             return demo.irodori_status()
+        if _engine_is_qwen3(engine_label):
+            return demo.qwen3_status()
         return "VoxCPM2を使用します。多言語、声のデザイン、声のクローン、高精度クローンに対応しています。"
 
     def _app_header_html(engine_label: str):
         if _engine_is_irodori(engine_label):
             logo_html = '<div class="text-logo">Irodori-TTS<span>日本語TTS</span></div>'
             engine_label_text = "Irodori-TTS"
+        elif _engine_is_qwen3(engine_label):
+            logo_html = '<div class="text-logo">Qwen3-TTS<span>Voice Design</span></div>'
+            engine_label_text = "Qwen3-TTS"
         else:
             logo_html = '<img src="/gradio_api/file=assets/voxcpm_logo.png" alt="VoxCPM2 Logo">'
             engine_label_text = "VoxCPM2"
@@ -1187,38 +1419,46 @@ def create_demo_interface(demo: VoxCPMDemo):
 
     def _engine_visibility_updates(engine_label: str):
         is_irodori = _engine_is_irodori(engine_label)
-        voxcpm_only = gr.update(visible=not is_irodori)
+        is_qwen3 = _engine_is_qwen3(engine_label)
+        voxcpm_only = gr.update(visible=not is_irodori and not is_qwen3)
         irodori_only = gr.update(visible=is_irodori)
+        qwen3_only = gr.update(visible=is_qwen3)
+        not_irodori = gr.update(visible=not is_irodori)
+        supported_hifi = gr.update(visible=not is_irodori and not is_qwen3)
+        unsupported_hifi = gr.update(visible=is_irodori or is_qwen3)
         return (
             _app_header_html(engine_label),
             _engine_status(engine_label),
-            voxcpm_only,
+            not_irodori,
             gr.update(visible=True),
-            voxcpm_only,
-            voxcpm_only,
-            voxcpm_only,
-            voxcpm_only,
-            irodori_only,
-            voxcpm_only,
-            voxcpm_only,
-            voxcpm_only,
-            voxcpm_only,
-            voxcpm_only,
-            voxcpm_only,
+            not_irodori,
+            not_irodori,
+            not_irodori,
             voxcpm_only,
             irodori_only,
+            not_irodori,
+            qwen3_only,
+            voxcpm_only,
+            voxcpm_only,
+            voxcpm_only,
+            voxcpm_only,
+            supported_hifi,
+            supported_hifi,
+            unsupported_hifi,
         )
 
     _engine_tab_visibility_js = """
     (engineLabel) => {
         const apply = () => {
             const isIrodori = String(engineLabel || "").startsWith("Irodori-TTS");
+            const isQwen3 = String(engineLabel || "").startsWith("Qwen3-TTS");
+            const hideHifi = isIrodori || isQwen3;
             const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
             const hifiTab = tabs.find((tab) => (tab.textContent || "").includes("高精度クローン"));
             if (!hifiTab) return;
-            hifiTab.style.display = isIrodori ? "none" : "";
-            hifiTab.setAttribute("aria-hidden", isIrodori ? "true" : "false");
-            if (isIrodori && hifiTab.getAttribute("aria-selected") === "true") {
+            hifiTab.style.display = hideHifi ? "none" : "";
+            hifiTab.setAttribute("aria-hidden", hideHifi ? "true" : "false");
+            if (hideHifi && hifiTab.getAttribute("aria-selected") === "true") {
                 const fallbackTab =
                     tabs.find((tab) => (tab.textContent || "").includes("声のクローン")) ||
                     tabs.find((tab) => (tab.textContent || "").includes("声のデザイン"));
@@ -1260,6 +1500,32 @@ def create_demo_interface(demo: VoxCPMDemo):
                 voice_gender=voice_gender,
             )
             return audio, output_path, gr.update(choices=_list_voice_design_history(), value=None)
+
+        if _engine_is_qwen3(engine_label):
+            control_prompt = _combine_voice_profile_prompt(
+                voice_age,
+                voice_gender,
+                voice_features,
+                control_instruction,
+            )
+            instruct = " ".join(
+                part
+                for part in (
+                    control_prompt,
+                    _build_intonation_prompt(intonation_instruction),
+                    _build_word_accent_prompt(word_accent_instruction),
+                )
+                if part
+            )
+            audio, output_path = _generate_qwen3_for_download(
+                mode="design",
+                text=text,
+                prefix="qwen3_design",
+                filename_hint=filename_hint,
+                target_language=target_language,
+                instruct=instruct,
+            )
+            return audio, output_path, gr.update(choices=_list_voice_design_history(), value=output_path)
 
         control_prompt = _combine_voice_profile_prompt(
             voice_age,
@@ -1337,6 +1603,22 @@ def create_demo_interface(demo: VoxCPMDemo):
                 filename_hint=filename_hint,
                 reference_wav=history_wav,
             )
+        if _engine_is_qwen3(engine_label):
+            reference_text = _read_reference_text_sidecar(history_wav)
+            if not reference_text:
+                raise ValueError(
+                    "Qwen3-TTSで履歴の声を再利用するには、その履歴WAVの横に参照テキスト（.txt）が必要です。"
+                    "Qwen3-TTSで新しく声のデザインを生成してから再利用してください。"
+                )
+            return _generate_qwen3_for_download(
+                mode="clone",
+                text=text,
+                prefix="qwen3_history_reuse",
+                filename_hint=filename_hint,
+                target_language=target_language,
+                reference_wav=history_wav,
+                reference_text=reference_text,
+            )
         sr, wav_np = demo.generate_tts_audio(
             text_input=text,
             control_instruction="",
@@ -1363,6 +1645,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         word_accent_instruction: str,
         ref_wav: Optional[str],
         history_wav: Optional[str],
+        qwen3_ref_text: str,
         target_language: str,
         filename_hint: str,
         cfg_value: float,
@@ -1382,6 +1665,22 @@ def create_demo_interface(demo: VoxCPMDemo):
                 control_instruction="",
                 voice_age=voice_age,
                 voice_gender=voice_gender,
+            )
+        if _engine_is_qwen3(engine_label):
+            reference_text = (qwen3_ref_text or "").strip() or _read_reference_text_sidecar(history_wav)
+            if not reference_text:
+                raise ValueError(
+                    "Qwen3-TTSの声のクローンには、参照音声の文字起こしが必要です。"
+                    "参照音声で実際に話している内容を入力してください。"
+                )
+            return _generate_qwen3_for_download(
+                mode="clone",
+                text=text,
+                prefix="qwen3_clone",
+                filename_hint=filename_hint,
+                target_language=target_language,
+                reference_wav=ref_source,
+                reference_text=reference_text,
             )
         sr, wav_np = demo.generate_tts_audio(
             text_input=text,
@@ -1417,6 +1716,8 @@ def create_demo_interface(demo: VoxCPMDemo):
         ref_source = _resolve_reference_audio(ref_wav, history_wav, "高精度クローン")
         if _engine_is_irodori(engine_label):
             raise ValueError("Irodori-TTSは高精度クローン（参照音声+文字起こしの連続生成）には未対応です。声のクローンタブでIrodori-TTSを使ってください。")
+        if _engine_is_qwen3(engine_label):
+            raise ValueError("Qwen3-TTSはこの高精度クローンタブには未対応です。声のクローンタブで参照音声と文字起こしを指定してください。")
         if not prevent_leading_mix and not (prompt_text_value or "").strip():
             raise ValueError("文字起こしを使う場合は、参照音声の文字起こしが必要です。")
         sr, wav_np = demo.generate_tts_audio(
@@ -1887,7 +2188,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 )
 
             with gr.Tab("声のクローン") as clone_tab:
-                gr.Markdown("参照音声の声質をもとに、別の文章を読み上げます。声の指示で雰囲気の調整もできます。")
+                gr.Markdown("参照音声の声質をもとに、別の文章を読み上げます。選択中のエンジンに必要な追加項目だけを表示します。")
                 with gr.Row():
                     with gr.Column():
                         clone_ref = gr.Audio(
@@ -1903,6 +2204,14 @@ def create_demo_interface(demo: VoxCPMDemo):
                             info="参照音声をアップロードしていない場合、この履歴の声を使います。",
                         )
                         clone_history_refresh = gr.Button("履歴を更新", variant="secondary", size="sm")
+                        with gr.Group(visible=False) as clone_qwen3_ref_text_group:
+                            clone_qwen3_ref_text = gr.Textbox(
+                                value="",
+                                label="参照音声の文字起こし（Qwen3-TTS用）",
+                                placeholder="参照音声で実際に話している内容を入力してください。例: こんにちは。今日は音声生成のテストをしています。",
+                                lines=3,
+                                info="Qwen3-TTSの声のクローンでは、参照音声と同じ内容の文字起こしが必要です。Qwen3の履歴を選んだ場合は保存済みテキストを自動利用できます。",
+                            )
                         with gr.Group(visible=False) as clone_irodori_profile_group:
                             gr.Markdown("**Irodori声質ヒント**\n\n参照音声が優先されますが、年齢・性別・特徴を声質説明として補助的に渡します。")
                             with gr.Row():
@@ -1960,7 +2269,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         gr.Markdown(
                             "**使い方**\n\n"
                             "1. クローンしたい声の音声をアップロードするか、声のデザイン履歴から選びます。\n"
-                            "2. 必要なら声の指示で雰囲気を調整します。\n"
+                            "2. 表示されている追加項目を入力します。Qwen3-TTSでは参照音声の文字起こしが必要です。\n"
                             "3. 読み上げテキストを入力して生成します。"
                         )
 
@@ -1977,6 +2286,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         clone_word_accent,
                         clone_ref,
                         clone_history,
+                        clone_qwen3_ref_text,
                         clone_language,
                         clone_filename,
                         clone_cfg,
@@ -2010,7 +2320,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                     "このモードでは不要な読み上げ混入を防ぐため、英語の制御文は先頭に追加しません。"
                 )
                 hifi_irodori_notice = gr.Markdown(
-                    "Irodori-TTSは高精度クローンには対応していません。Irodori-TTSを使う場合は「声のクローン」タブで参照音声を指定してください。",
+                    "選択中のエンジンは高精度クローンには対応していません。Irodori-TTSやQwen3-TTSを使う場合は「声のクローン」タブで参照音声を指定してください。",
                     visible=False,
                 )
                 with gr.Group() as hifi_voxcpm_group:
@@ -2145,6 +2455,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             design_prosody_group,
             design_advanced_group,
             clone_irodori_profile_group,
+            clone_qwen3_ref_text_group,
             clone_language,
             clone_control,
             clone_word_accent_group,

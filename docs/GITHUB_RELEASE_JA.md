@@ -13,6 +13,7 @@
 
 - `pretrained_models/`
 - `outputs/`
+- `external/`
 - `.venv/`
 - `.uv-cache/`
 - Hugging Face / ModelScope のキャッシュ
@@ -23,15 +24,17 @@
 
 ## ライセンス表記
 
-OpenBMB/VoxCPM と VoxCPM2 は Apache-2.0 ライセンスです。Irodori-TTS、Irodori-TTS-500M-v3、Semantic-DACVAE-Japanese-32dim はMITライセンスです。
+OpenBMB/VoxCPM と VoxCPM2 は Apache-2.0 ライセンスです。Irodori-TTS、Irodori-TTS-500M-v3、Semantic-DACVAE-Japanese-32dim はMITライセンスです。Qwen3-TTS と qwen-tts は Apache-2.0 ライセンスです。Voice-Design-Cloner は MIT ライセンスです。
 
 公開リポジトリでは `LICENSE` と [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) を残し、READMEに以下のような説明を入れてください。
 
 ```text
-JP Voice Studio is an unofficial Japanese Web UI and integration layer based on OpenBMB/VoxCPM, with optional Irodori-TTS support.
+JP Voice Studio is an unofficial Japanese Web UI and integration layer based on OpenBMB/VoxCPM, with optional Irodori-TTS and Qwen3-TTS support.
 Original project: https://github.com/OpenBMB/VoxCPM
 OpenBMB/VoxCPM and VoxCPM2: Apache-2.0
 Irodori-TTS and related optional Irodori models/codecs: MIT
+Qwen3-TTS and qwen-tts: Apache-2.0
+Voice-Design-Cloner: MIT
 ```
 
 ## READMEに入れる推奨注意書き
@@ -76,6 +79,13 @@ powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda.ps1 -SkipSetup
+```
+
+Irodori-TTSやQwen3-TTSも使う場合:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_irodori_tts.ps1
+powershell -ExecutionPolicy Bypass -File scripts\setup_qwen3_tts.ps1
 ```
 
 非エンジニア向けには、GitHub Releasesにzipを置き、READMEに上記コマンドだけを案内するのが扱いやすいです。

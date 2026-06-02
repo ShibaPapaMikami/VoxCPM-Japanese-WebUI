@@ -1,6 +1,6 @@
 # JP Voice Studio セットアップ
 
-JP Voice Studioは、OpenBMB/VoxCPM をベースに、日本語UI、声のデザイン履歴、WAVダウンロード、多言語選択、高精度クローン補助などを追加した音声生成・声クローン統合ツールです。任意の追加エンジンとして Irodori-TTS も利用できます。
+JP Voice Studioは、OpenBMB/VoxCPM をベースに、日本語UI、声のデザイン履歴、WAVダウンロード、多言語選択、高精度クローン補助などを追加した音声生成・声クローン統合ツールです。任意の追加エンジンとして Irodori-TTS と Qwen3-TTS も利用できます。
 
 ## 対象環境
 
@@ -81,6 +81,18 @@ powershell -ExecutionPolicy Bypass -File scripts\setup_irodori_tts.ps1
 
 Irodori-TTSは日本語専用です。多言語生成や高精度クローンを使う場合は `VoxCPM2（総合）` を選んでください。
 
+## Qwen3-TTSを追加する場合
+
+Qwen3-TTSは多言語の声デザインと、参照音声+文字起こしによる声のクローンに対応する任意エンジンです。Voice-Design-ClonerのQwen3-TTSワークフローを参考に、このWeb UIから呼び出せるようにしています。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_qwen3_tts.ps1
+```
+
+完了後にWeb UIを再起動し、画面上部の「音声エンジン」で `Qwen3-TTS（声デザイン・多言語・実験）` を選びます。
+
+Qwen3-TTSの声のクローンでは、参照音声の文字起こしが必要です。Qwen3-TTSで作った声のデザイン履歴は、WAVの横に `.txt` を保存するため、そのまま履歴再利用できます。
+
 ## 主な使い方
 
 - 声のデザイン: 参照音声なしで声を作る
@@ -88,7 +100,7 @@ Irodori-TTSは日本語専用です。多言語生成や高精度クローンを
 - 声のクローン: 参照音声の声質で別テキストを読む
 - 高精度クローン: 参照音声と文字起こしを使って再現度を上げる
 - 発話言語: テキストの発話言語を指定する
-- 音声エンジン: VoxCPM2とIrodori-TTSを切り替える
+- 音声エンジン: VoxCPM2、Irodori-TTS、Qwen3-TTSを切り替える
 - 単語アクセントを指定: `イチゴ=語尾上げ` のように単語ごとの読み方を補助する
 - 記号で読み方を調整: `「」`、`、`、`……`、`！`、`？` を本文に挿入する
 

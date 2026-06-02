@@ -9,7 +9,7 @@ if ([string]::IsNullOrWhiteSpace($InstallDir)) {
     $InstallDir = Join-Path $RepoRoot "external\Irodori-TTS"
 }
 
-Write-Host "JPVoxCPM WebUI - Irodori-TTS setup"
+Write-Host "JP Voice Studio - Irodori-TTS setup"
 Write-Host "Install dir: $InstallDir"
 
 $env:GIT_SSL_BACKEND = "schannel"
@@ -60,4 +60,4 @@ if (-not $SkipSync) {
 
 Write-Host ""
 Write-Host "Irodori-TTS setup finished."
-Write-Host "Restart JPVoxCPM WebUI, then select 'Irodori-TTS（日本語特化・実験）' in the audio engine selector."
+Write-Host "Restart JP Voice Studio, then select 'Irodori-TTS（日本語特化・実験）' in the audio engine selector."

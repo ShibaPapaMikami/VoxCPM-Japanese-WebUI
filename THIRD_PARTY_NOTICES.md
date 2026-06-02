@@ -13,6 +13,9 @@ This project, JP Voice Studio, is an unofficial Japanese Web UI and integration 
 | Aratako/Irodori-TTS | Optional Japanese-specialized TTS engine | https://github.com/Aratako/Irodori-TTS | MIT |
 | Irodori-TTS-500M-v3 | Optional Irodori model checkpoint | https://huggingface.co/Aratako/Irodori-TTS-500M-v3 | MIT |
 | Semantic-DACVAE-Japanese-32dim | Codec used by Irodori-TTS | https://huggingface.co/Aratako/Semantic-DACVAE-Japanese-32dim | MIT |
+| Qwen3-TTS models | Optional multilingual voice design and voice cloning engine | https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign | Apache-2.0 |
+| qwen-tts | Optional Python package used to run Qwen3-TTS | https://pypi.org/project/qwen-tts/ | Apache-2.0 |
+| reinehonoka/Voice-Design-Cloner | Reference implementation for Qwen3-TTS voice design / clone workflows | https://github.com/reinehonoka/Voice-Design-Cloner | MIT |
 | Gradio | Local Web UI framework | https://github.com/gradio-app/gradio | Apache-2.0 |
 
 ## License Summary
@@ -84,6 +87,7 @@ JP Voice Studio is an unofficial Japanese Web UI and integration layer based on 
 
 OpenBMB/VoxCPM and VoxCPM2 are licensed under Apache-2.0.
 Irodori-TTS, Irodori-TTS-500M-v3, and Semantic-DACVAE-Japanese-32dim are licensed under MIT.
+Qwen3-TTS and qwen-tts are licensed under Apache-2.0.
+Voice-Design-Cloner is licensed under MIT and is referenced for Qwen3-TTS workflow integration.
 Users are responsible for using generated or cloned voices only with appropriate permission and in compliance with applicable laws and policies.
 ```
-
