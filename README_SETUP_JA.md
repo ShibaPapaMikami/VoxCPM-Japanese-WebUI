@@ -83,7 +83,7 @@ Irodori-TTSは日本語専用です。多言語生成や高精度クローンを
 
 ## VoiceDesignCloner連携（Qwen3-TTS・簡易）を追加する場合
 
-VoiceDesignCloner連携（Qwen3-TTS・簡易）は、多言語の声デザイン、声ガチャ、参照音声+文字起こしによる簡易クローン、選んだ声での簡易コーパス一括音声化に対応する任意エンジンです。Voice-Design-ClonerのQwen3-TTSワークフローを参考に、このWeb UIから呼び出せるようにしています。
+VoiceDesignCloner連携（Qwen3-TTS・簡易）は、多言語の声デザイン、声ガチャ、参照音声+文字起こしによる簡易クローン、選んだ声での簡易コーパス一括音声化、リサンプル、esd.list生成に対応する任意エンジンです。Voice-Design-ClonerのQwen3-TTSワークフローを参考に、このWeb UIから呼び出せるようにしています。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\setup_qwen3_tts.ps1
@@ -91,15 +91,16 @@ powershell -ExecutionPolicy Bypass -File scripts\setup_qwen3_tts.ps1
 
 完了後にWeb UIを再起動し、画面上部の「音声エンジン」で `VoiceDesignCloner連携（Qwen3-TTS・簡易）` を選びます。
 
-Qwen3-TTSの声のクローンでは、参照音声の文字起こしが必要です。Qwen3-TTSで作った声のデザイン履歴は、WAVの横に `.txt` を保存するため、そのまま履歴再利用できます。コーパス一括音声化では、1行1文のテキストから `raw/*.wav` と `Neutral.txt` を生成します。
+Qwen3-TTSの声のクローンでは、参照音声の文字起こしが必要です。Qwen3-TTSで作った声のデザイン履歴は、WAVの横に `.txt` を保存するため、そのまま履歴再利用できます。コーパス一括音声化では、1行1文のテキストから `raw/*.wav` と `Neutral.txt` を生成します。必要に応じて `resampled/` と `esd.list` も作成できます。
 
-Voice-Design-Cloner本体のLoRA学習、リサンプル、esd.list生成、Style-Bert-VITS2向け一括前処理は、現時点ではまだ未統合です。
+Voice-Design-Cloner本体のLoRA学習とStyle-Bert-VITS2向け完全自動配置は、現時点ではまだ未統合です。
 
 ## 主な使い方
 
 - 声のデザイン: 参照音声なしで声を作る
 - 声ガチャ: VoiceDesignCloner連携で複数候補を生成して試聴する
 - コーパス一括音声化: VoiceDesignCloner連携で1行1文のテキストをまとめてWAV化する
+- リサンプル・esd.list生成: 生成したコーパスをStyle-Bert-VITS2向けの入口形式に整える
 - 声のデザイン履歴から再利用: 作った声を参照音声として別セリフに使う
 - 声のクローン: 参照音声の声質で別テキストを読む
 - 高精度クローン: 参照音声と文字起こしを使って再現度を上げる

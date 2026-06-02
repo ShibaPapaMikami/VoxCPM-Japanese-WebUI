@@ -5,6 +5,7 @@ import json
 import logging
 import shutil
 import subprocess
+import time
 import numpy as np
 import gradio as gr
 from gradio import processing_utils
@@ -915,8 +916,8 @@ class VoxCPMDemo:
         return (
             "VoiceDesignCloner連携（Qwen3-TTS・簡易）を使用します。Voice-Design-ClonerのQwen3-TTSワークフローを参考に、"
             "多言語の声デザイン、声ガチャ、参照音声+文字起こしによる簡易クローン、"
-            "選んだ声での簡易コーパス一括音声化に対応しています。"
-            "Irodori-TTS LoRA学習、リサンプル、esd.list生成、Style-Bert-VITS2向け一括前処理はまだ統合していません。"
+            "選んだ声での簡易コーパス一括音声化、リサンプル、esd.list生成に対応しています。"
+            "Irodori-TTS LoRA学習とStyle-Bert-VITS2向けの完全自動配置はまだ統合していません。"
         )
 
     def generate_qwen3_audio(
@@ -1313,6 +1314,101 @@ def create_demo_interface(demo: VoxCPMDemo):
         if limit > 0:
             lines = lines[:limit]
         return lines
+
+    def _resolve_corpus_output_folder(folder_path: str) -> Path:
+        if not (folder_path or "").strip():
+            raise ValueError("コーパスフォルダを指定してください。")
+        folder = Path(os.path.expandvars(os.path.expanduser(folder_path.strip())))
+        if not folder.is_absolute():
+            folder = _output_dir() / folder
+        folder = folder.resolve()
+        output_root = _output_dir().resolve()
+        if folder != output_root and output_root not in folder.parents:
+            raise ValueError("現在の保存先フォルダ内のコーパスフォルダだけ処理できます。")
+        if not folder.is_dir():
+            raise ValueError(f"コーパスフォルダが見つかりません: {folder}")
+        return folder
+
+    def _load_corpus_text_map(base_dir: Path) -> dict[str, str]:
+        text_file = base_dir / "Neutral.txt"
+        if not text_file.exists():
+            raise ValueError(f"Neutral.txt が見つかりません: {text_file}")
+        text_map: dict[str, str] = {}
+        lines = [line.strip() for line in text_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+        for index, line in enumerate(lines):
+            parts = line.split("|")
+            if len(parts) >= 4:
+                key = parts[0].strip()
+                text = parts[3].strip()
+            elif len(parts) == 2:
+                key = parts[0].strip()
+                text = parts[1].strip()
+            else:
+                key = f"{index + 1:04d}"
+                text = line
+            if not key or not text:
+                continue
+            stem = Path(key).stem
+            text_map[stem] = text
+            text_map[f"{stem}.wav"] = text
+        if not text_map:
+            raise ValueError("Neutral.txt に利用できる本文がありません。")
+        return text_map
+
+    def _resample_corpus_raw(folder_path: str, target_sr: int, progress=gr.Progress()):
+        base_dir = _resolve_corpus_output_folder(folder_path)
+        raw_dir = base_dir / "raw"
+        if not raw_dir.is_dir():
+            raise ValueError(f"rawフォルダが見つかりません: {raw_dir}")
+        wav_files = sorted(raw_dir.glob("*.wav"))
+        if not wav_files:
+            raise ValueError("rawフォルダにWAVがありません。")
+
+        import librosa
+        import soundfile as sf
+
+        sr = int(target_sr or 44100)
+        out_dir = base_dir / "resampled"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        start = time.time()
+        for index, wav_path in enumerate(wav_files):
+            audio, source_sr = librosa.load(str(wav_path), sr=None, mono=True)
+            if int(source_sr) != sr:
+                audio = librosa.resample(audio, orig_sr=int(source_sr), target_sr=sr)
+            sf.write(str(out_dir / wav_path.name), audio, sr, subtype="PCM_16")
+            progress((index + 1) / len(wav_files), f"{index + 1}/{len(wav_files)}")
+        elapsed = time.time() - start
+        return f"{len(wav_files)}ファイルを {sr}Hz / mono / PCM_16 に変換しました（{elapsed:.1f}秒）。\n出力先: {out_dir}"
+
+    def _generate_corpus_esd_list(folder_path: str, speaker_name: str, lang_code: str):
+        base_dir = _resolve_corpus_output_folder(folder_path)
+        raw_dir = base_dir / "raw"
+        if not raw_dir.is_dir():
+            raise ValueError(f"rawフォルダが見つかりません: {raw_dir}")
+        wav_files = sorted(raw_dir.glob("*.wav"))
+        if not wav_files:
+            raise ValueError("rawフォルダにWAVがありません。")
+
+        text_map = _load_corpus_text_map(base_dir)
+        speaker = _sanitize_filename(speaker_name) or _sanitize_filename(base_dir.name) or "speaker"
+        lang = (lang_code or "JP").strip().upper()
+        esd_lines = []
+        skipped = []
+        for wav_path in wav_files:
+            text = text_map.get(wav_path.name) or text_map.get(wav_path.stem)
+            if not text:
+                skipped.append(wav_path.name)
+                continue
+            esd_lines.append(f"{wav_path.name}|{speaker}|{lang}|{text}")
+        if not esd_lines:
+            raise ValueError("raw/*.wav と Neutral.txt の対応が見つかりませんでした。")
+
+        esd_path = base_dir / "esd.list"
+        esd_path.write_text("\n".join(esd_lines) + "\n", encoding="utf-8")
+        message = f"{len(esd_lines)}行の esd.list を生成しました。\n保存先: {esd_path}"
+        if skipped:
+            message += f"\n本文が見つからずスキップ: {len(skipped)}件"
+        return message, str(esd_path)
 
     def _save_wav_for_download(sr: int, wav_np: np.ndarray, prefix: str, filename_hint: str = "") -> str:
         output_dir = _output_dir()
@@ -1925,7 +2021,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 f"{len(lines)}文のコーパスを生成しました。\n\n"
                 f"- WAV: `{raw_folder}`\n"
                 f"- テキストリスト: `{text_list}`\n\n"
-                "これは簡易版です。LoRA学習、esd.list生成、Style-Bert-VITS2向け前処理は次の段階で追加します。"
+                "必要に応じて下の前処理でリサンプルや esd.list 生成を実行できます。"
             )
             return status, output_folder, text_list
         finally:
@@ -2595,11 +2691,48 @@ def create_demo_interface(demo: VoxCPMDemo):
                             clone_corpus_status = gr.Markdown("")
                             clone_corpus_output_dir = gr.Textbox(
                                 value="",
-                                label="コーパス出力フォルダ",
-                                interactive=False,
+                                label="コーパスフォルダ（生成後に自動入力・貼り付け可）",
+                                interactive=True,
                             )
                             clone_corpus_open_dir = gr.Button("コーパスフォルダを開く", variant="secondary", size="sm")
                             clone_corpus_text_list_file = gr.File(label="Neutral.txt", interactive=False)
+                            gr.Markdown(
+                                "**Style-Bert-VITS2向け前処理**\n\n"
+                                "`raw/*.wav` と `Neutral.txt` から、リサンプル済みWAVと `esd.list` を作成します。"
+                            )
+                            with gr.Row():
+                                clone_corpus_resample_sr = gr.Dropdown(
+                                    choices=[44100, 48000, 24000, 22050],
+                                    value=44100,
+                                    label="リサンプル先Hz",
+                                )
+                                clone_corpus_resample_btn = gr.Button("rawをresampledへ変換", variant="secondary")
+                            clone_corpus_resample_status = gr.Textbox(
+                                value="",
+                                label="リサンプル結果",
+                                interactive=False,
+                                lines=3,
+                            )
+                            with gr.Row():
+                                clone_corpus_speaker = gr.Textbox(
+                                    value="",
+                                    label="話者名",
+                                    placeholder="空欄ならフォルダ名を使います",
+                                    lines=1,
+                                )
+                                clone_corpus_esd_lang = gr.Dropdown(
+                                    choices=["JP", "EN", "ZH"],
+                                    value="JP",
+                                    label="esd.list言語コード",
+                                )
+                            clone_corpus_esd_btn = gr.Button("esd.listを生成", variant="secondary")
+                            clone_corpus_esd_status = gr.Textbox(
+                                value="",
+                                label="esd.list生成結果",
+                                interactive=False,
+                                lines=3,
+                            )
+                            clone_corpus_esd_file = gr.File(label="esd.list", interactive=False)
                         gr.Markdown(
                             "**使い方**\n\n"
                             "1. クローンしたい声の音声をアップロードするか、声のデザイン履歴から選びます。\n"
@@ -2657,6 +2790,20 @@ def create_demo_interface(demo: VoxCPMDemo):
                     show_progress=False,
                     api_name=None,
                     api_visibility="private",
+                )
+                clone_corpus_resample_btn.click(
+                    fn=_resample_corpus_raw,
+                    inputs=[clone_corpus_output_dir, clone_corpus_resample_sr],
+                    outputs=[clone_corpus_resample_status],
+                    show_progress=True,
+                    api_name="qwen3_corpus_resample",
+                )
+                clone_corpus_esd_btn.click(
+                    fn=_generate_corpus_esd_list,
+                    inputs=[clone_corpus_output_dir, clone_corpus_speaker, clone_corpus_esd_lang],
+                    outputs=[clone_corpus_esd_status, clone_corpus_esd_file],
+                    show_progress=True,
+                    api_name="qwen3_corpus_esd_list",
                 )
                 clone_history_refresh.click(
                     fn=_refresh_voice_design_history,
