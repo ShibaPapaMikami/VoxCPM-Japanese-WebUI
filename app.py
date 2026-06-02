@@ -914,9 +914,9 @@ class VoxCPMDemo:
             )
         return (
             "VoiceDesignCloner連携（Qwen3-TTS・簡易）を使用します。Voice-Design-ClonerのQwen3-TTSワークフローを参考に、"
-            "多言語の声デザイン、声ガチャ、参照音声+文字起こしによる1文ずつの簡易クローンに対応しています。"
-            "VoiceDesignCloner本体のコーパス一括音声化、Irodori-TTS LoRA学習、"
-            "リサンプル、esd.list生成、Style-Bert-VITS2向け一括前処理はまだ統合していません。"
+            "多言語の声デザイン、声ガチャ、参照音声+文字起こしによる簡易クローン、"
+            "選んだ声での簡易コーパス一括音声化に対応しています。"
+            "Irodori-TTS LoRA学習、リサンプル、esd.list生成、Style-Bert-VITS2向け一括前処理はまだ統合していません。"
         )
 
     def generate_qwen3_audio(
@@ -988,6 +988,77 @@ class VoxCPMDemo:
         if not output_path.exists():
             raise RuntimeError("Qwen3-TTSの生成は完了しましたが、出力WAVが見つかりませんでした。")
         return processing_utils.audio_from_file(str(output_path))
+
+    def generate_qwen3_corpus(
+        self,
+        *,
+        texts_file_path: str,
+        output_dir_path: str,
+        language_input: str,
+        reference_wav_path_input: str,
+        reference_text_input: str,
+        target_sr: int = 44100,
+    ) -> tuple[str, str, str]:
+        if not reference_wav_path_input:
+            raise ValueError("コーパス一括音声化には参照音声が必要です。")
+        if not (reference_text_input or "").strip():
+            raise ValueError("コーパス一括音声化には参照音声の文字起こしが必要です。")
+
+        wrapper_path = Path.cwd() / "scripts" / "run_qwen3_tts_infer.py"
+        if not wrapper_path.exists():
+            raise RuntimeError(f"Qwen3-TTS実行ラッパーが見つかりません: {wrapper_path}")
+
+        output_dir = Path(output_dir_path)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        command = [
+            sys.executable,
+            str(wrapper_path),
+            "--mode",
+            "clone-batch",
+            "--texts-file",
+            str(texts_file_path),
+            "--output-dir",
+            str(output_dir),
+            "--text-list",
+            "Neutral.txt",
+            "--target-sr",
+            str(int(target_sr or 0)),
+            "--language",
+            language_input,
+            "--ref-wav",
+            str(reference_wav_path_input),
+            "--ref-text",
+            (reference_text_input or "").strip(),
+        ]
+
+        logger.info("Running Qwen3-TTS corpus batch...")
+        env = os.environ.copy()
+        env.update(
+            {
+                "UV_NATIVE_TLS": "true",
+                "GIT_SSL_BACKEND": "schannel",
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "http.sslBackend",
+                "GIT_CONFIG_VALUE_0": "schannel",
+            }
+        )
+        result = subprocess.run(
+            command,
+            cwd=str(Path.cwd()),
+            capture_output=True,
+            text=True,
+            timeout=7200,
+            env=env,
+        )
+        if result.returncode != 0:
+            detail = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
+            raise RuntimeError(f"Qwen3-TTSのコーパス一括音声化に失敗しました。\n{detail[-2000:]}")
+
+        raw_dir = output_dir / "raw"
+        text_list = output_dir / "Neutral.txt"
+        if not raw_dir.exists() or not text_list.exists():
+            raise RuntimeError("コーパス生成は完了しましたが、rawフォルダまたはNeutral.txtが見つかりませんでした。")
+        return str(output_dir), str(raw_dir), str(text_list)
 
     def _build_generate_kwargs(
         self,
@@ -1195,6 +1266,23 @@ def create_demo_interface(demo: VoxCPMDemo):
         except Exception as e:
             return f"保存先フォルダを開けませんでした: {e}"
 
+    def _open_existing_folder(folder_path: str):
+        try:
+            if not (folder_path or "").strip():
+                raise ValueError("先にコーパスを生成してください。")
+            folder = Path(folder_path or "").expanduser().resolve()
+            if not folder.exists() or not folder.is_dir():
+                raise ValueError("フォルダが見つかりません。")
+            if sys.platform.startswith("win"):
+                os.startfile(str(folder))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(folder)])
+            else:
+                subprocess.Popen(["xdg-open", str(folder)])
+            return f"フォルダを開きました: {folder}"
+        except Exception as e:
+            return f"フォルダを開けませんでした: {e}"
+
     def _sanitize_filename(name: str) -> str:
         name = (name or "").strip()
         if not name:
@@ -1202,6 +1290,29 @@ def create_demo_interface(demo: VoxCPMDemo):
         name = re.sub(r"[\\/:*?\"<>|]+", "_", name)
         name = re.sub(r"\s+", "_", name).strip("._ ")
         return name[:80]
+
+    def _read_corpus_file_text(corpus_file: Optional[str]) -> str:
+        if not corpus_file:
+            return ""
+        try:
+            file_path = corpus_file if isinstance(corpus_file, str) else getattr(corpus_file, "name", "")
+            if not file_path:
+                return ""
+            return Path(file_path).read_text(encoding="utf-8-sig")
+        except Exception as e:
+            raise RuntimeError(f"コーパスTXTを読み込めませんでした: {e}") from e
+
+    def _collect_corpus_lines(corpus_text: str, corpus_file: Optional[str], max_lines: int) -> list[str]:
+        combined_text = "\n".join(
+            part for part in ((corpus_text or "").strip(), _read_corpus_file_text(corpus_file).strip()) if part
+        )
+        lines = [line.strip() for line in combined_text.splitlines() if line.strip()]
+        if not lines:
+            raise ValueError("コーパス本文を入力するか、TXTファイルをアップロードしてください。")
+        limit = int(max_lines or 0)
+        if limit > 0:
+            lines = lines[:limit]
+        return lines
 
     def _save_wav_for_download(sr: int, wav_np: np.ndarray, prefix: str, filename_hint: str = "") -> str:
         output_dir = _output_dir()
@@ -1440,6 +1551,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             voxcpm_only,
             qwen3_only,
             irodori_only,
+            qwen3_only,
+            qwen3_only,
             qwen3_only,
             not_irodori,
             voxcpm_only,
@@ -1766,6 +1879,61 @@ def create_demo_interface(demo: VoxCPMDemo):
             inference_timesteps=int(dit_steps),
         )
         return (sr, wav_np), _save_wav_for_download(sr, wav_np, "voice_clone", filename_hint)
+
+    def _generate_qwen3_corpus_batch(
+        engine_label: str,
+        ref_wav: Optional[str],
+        history_wav: Optional[str],
+        qwen3_ref_text: str,
+        target_language: str,
+        corpus_text: str,
+        corpus_file: Optional[str],
+        max_lines: int,
+        folder_name: str,
+        target_sr: int,
+    ):
+        if not _engine_is_qwen3(engine_label):
+            raise ValueError("コーパス一括音声化はVoiceDesignCloner連携（Qwen3-TTS・簡易）で利用できます。")
+
+        ref_source = _resolve_reference_audio(ref_wav, history_wav, "コーパス一括音声化")
+        reference_text = (qwen3_ref_text or "").strip() or _read_reference_text_sidecar(history_wav)
+        if not reference_text:
+            raise ValueError(
+                "Qwen3-TTSのコーパス一括音声化には、参照音声の文字起こしが必要です。"
+                "参照音声で実際に話している内容を入力してください。"
+            )
+
+        lines = _collect_corpus_lines(corpus_text, corpus_file, max_lines)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        folder_base = _sanitize_filename(folder_name) or "corpus"
+        output_dir = _output_dir() / f"qwen3_corpus_{folder_base}_{timestamp}"
+        output_dir.mkdir(parents=True, exist_ok=False)
+        texts_path = output_dir / "_input_texts.txt"
+        texts_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        prepared_reference, converted_reference = _prepare_qwen3_reference_wav(ref_source)
+        try:
+            output_folder, raw_folder, text_list = demo.generate_qwen3_corpus(
+                texts_file_path=str(texts_path),
+                output_dir_path=str(output_dir),
+                language_input=_qwen3_language_name(target_language),
+                reference_wav_path_input=str(prepared_reference),
+                reference_text_input=reference_text,
+                target_sr=int(target_sr or 0),
+            )
+            status = (
+                f"{len(lines)}文のコーパスを生成しました。\n\n"
+                f"- WAV: `{raw_folder}`\n"
+                f"- テキストリスト: `{text_list}`\n\n"
+                "これは簡易版です。LoRA学習、esd.list生成、Style-Bert-VITS2向け前処理は次の段階で追加します。"
+            )
+            return status, output_folder, text_list
+        finally:
+            try:
+                if converted_reference and converted_reference.exists():
+                    converted_reference.unlink()
+            except OSError:
+                pass
 
     def _generate_high_fidelity_clone(
         engine_label: str,
@@ -2377,6 +2545,42 @@ def create_demo_interface(demo: VoxCPMDemo):
                         with gr.Group() as clone_advanced_group:
                             clone_denoise, clone_normalize, clone_cfg, clone_steps = _advanced_settings(include_denoise=True)
                         clone_btn = gr.Button("この声で生成", variant="primary", size="lg")
+                        with gr.Group(visible=False) as clone_qwen3_corpus_group:
+                            gr.Markdown(
+                                "**コーパス一括音声化（簡易）**\n\n"
+                                "選択中の参照音声または履歴の声で、1行1文のテキストをまとめてWAV化します。"
+                                "出力は `raw/*.wav` と `Neutral.txt` です。"
+                            )
+                            clone_corpus_text = gr.Textbox(
+                                value="今日は新しい音声モデルのテストをしています。\nこの声で複数の文章を読み上げます。\n自然で聞き取りやすい音声を目指します。",
+                                label="コーパス本文（1行1文）",
+                                lines=8,
+                                placeholder="1行につき1文を入力してください。",
+                            )
+                            clone_corpus_file = gr.File(
+                                label="コーパスTXT（任意）",
+                                file_types=[".txt"],
+                                type="filepath",
+                            )
+                            with gr.Row():
+                                clone_corpus_limit = gr.Dropdown(
+                                    choices=[10, 50, 100, 300, 1000],
+                                    value=10,
+                                    label="生成する文数",
+                                    info="まずは10文程度で声質を確認するのがおすすめです。",
+                                )
+                                clone_corpus_target_sr = gr.Dropdown(
+                                    choices=[24000, 44100, 48000],
+                                    value=44100,
+                                    label="出力サンプルレート",
+                                )
+                            clone_corpus_folder_name = gr.Textbox(
+                                value="",
+                                label="出力フォルダ名（任意）",
+                                placeholder="例: my_character_corpus",
+                                lines=1,
+                            )
+                            clone_corpus_btn = gr.Button("コーパスを一括生成", variant="secondary")
                     with gr.Column():
                         clone_output = gr.Audio(label="生成された音声")
                         clone_file = gr.File(label="WAVダウンロード", interactive=False)
@@ -2387,6 +2591,15 @@ def create_demo_interface(demo: VoxCPMDemo):
                         )
                         clone_history_delete = gr.Button("選択した履歴を削除", variant="stop", size="sm")
                         clone_history_status = gr.Markdown("")
+                        with gr.Group(visible=False) as clone_qwen3_corpus_result_group:
+                            clone_corpus_status = gr.Markdown("")
+                            clone_corpus_output_dir = gr.Textbox(
+                                value="",
+                                label="コーパス出力フォルダ",
+                                interactive=False,
+                            )
+                            clone_corpus_open_dir = gr.Button("コーパスフォルダを開く", variant="secondary", size="sm")
+                            clone_corpus_text_list_file = gr.File(label="Neutral.txt", interactive=False)
                         gr.Markdown(
                             "**使い方**\n\n"
                             "1. クローンしたい声の音声をアップロードするか、声のデザイン履歴から選びます。\n"
@@ -2418,6 +2631,32 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[clone_output, clone_file],
                     show_progress=True,
                     api_name="clone",
+                )
+                clone_corpus_btn.click(
+                    fn=_generate_qwen3_corpus_batch,
+                    inputs=[
+                        engine_selector,
+                        clone_ref,
+                        clone_history,
+                        clone_qwen3_ref_text,
+                        clone_language,
+                        clone_corpus_text,
+                        clone_corpus_file,
+                        clone_corpus_limit,
+                        clone_corpus_folder_name,
+                        clone_corpus_target_sr,
+                    ],
+                    outputs=[clone_corpus_status, clone_corpus_output_dir, clone_corpus_text_list_file],
+                    show_progress=True,
+                    api_name="qwen3_corpus_batch",
+                )
+                clone_corpus_open_dir.click(
+                    fn=_open_existing_folder,
+                    inputs=[clone_corpus_output_dir],
+                    outputs=[clone_corpus_status],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
                 )
                 clone_history_refresh.click(
                     fn=_refresh_voice_design_history,
@@ -2578,6 +2817,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             design_qwen3_gacha_group,
             clone_irodori_profile_group,
             clone_qwen3_ref_text_group,
+            clone_qwen3_corpus_group,
+            clone_qwen3_corpus_result_group,
             clone_language,
             clone_control,
             clone_word_accent_group,
