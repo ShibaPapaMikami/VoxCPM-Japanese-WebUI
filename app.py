@@ -914,8 +914,8 @@ class VoxCPMDemo:
             )
         return (
             "VoiceDesignCloner連携（Qwen3-TTS・簡易）を使用します。Voice-Design-ClonerのQwen3-TTSワークフローを参考に、"
-            "多言語の声デザインと、参照音声+文字起こしによる1文ずつの簡易クローンに対応しています。"
-            "VoiceDesignCloner本体のコーパス一括音声化、声ガチャ専用UI、Irodori-TTS LoRA学習、"
+            "多言語の声デザイン、声ガチャ、参照音声+文字起こしによる1文ずつの簡易クローンに対応しています。"
+            "VoiceDesignCloner本体のコーパス一括音声化、Irodori-TTS LoRA学習、"
             "リサンプル、esd.list生成、Style-Bert-VITS2向け一括前処理はまだ統合していません。"
         )
 
@@ -1106,6 +1106,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             "irodori_design_*.wav",
             "irodori_history_reuse_*.wav",
             "qwen3_design_*.wav",
+            "qwen3_gacha_*.wav",
             "qwen3_history_reuse_*.wav",
         ):
             history_paths.extend(output_dir.glob(pattern))
@@ -1437,9 +1438,10 @@ def create_demo_interface(demo: VoxCPMDemo):
             not_irodori,
             not_irodori,
             voxcpm_only,
-            irodori_only,
-            not_irodori,
             qwen3_only,
+            irodori_only,
+            qwen3_only,
+            not_irodori,
             voxcpm_only,
             voxcpm_only,
             voxcpm_only,
@@ -1551,6 +1553,71 @@ def create_demo_interface(demo: VoxCPMDemo):
         )
         output_path = _save_wav_for_download(sr, wav_np, "voice_design", filename_hint)
         return (sr, wav_np), output_path, gr.update(choices=_list_voice_design_history(), value=output_path)
+
+    def _generate_voice_gacha(
+        engine_label: str,
+        text: str,
+        voice_age: str,
+        voice_gender: str,
+        voice_features: Optional[list[str]],
+        control_instruction: str,
+        intonation_instruction: str,
+        word_accent_instruction: str,
+        target_language: str,
+        filename_hint: str,
+        candidate_count: int,
+    ):
+        if not _engine_is_qwen3(engine_label):
+            raise ValueError("声ガチャはVoiceDesignCloner連携（Qwen3-TTS・簡易）で利用できます。")
+
+        count = max(1, min(int(candidate_count or 2), 4))
+        control_prompt = _combine_voice_profile_prompt(
+            voice_age,
+            voice_gender,
+            voice_features,
+            control_instruction,
+        )
+        instruct = " ".join(
+            part
+            for part in (
+                control_prompt,
+                _build_intonation_prompt(intonation_instruction),
+                _build_word_accent_prompt(word_accent_instruction),
+            )
+            if part
+        )
+        base_name = _sanitize_filename(filename_hint) or "gacha"
+        audio_updates = []
+        file_updates = []
+        generated_paths: list[str] = []
+        for index in range(4):
+            if index < count:
+                audio, output_path = _generate_qwen3_for_download(
+                    mode="design",
+                    text=text,
+                    prefix="qwen3_gacha",
+                    filename_hint=f"{base_name}_{index + 1:02d}",
+                    target_language=target_language,
+                    instruct=instruct,
+                )
+                audio_updates.append(gr.update(value=audio, visible=True))
+                file_updates.append(gr.update(value=output_path, visible=True))
+                generated_paths.append(output_path)
+            else:
+                audio_updates.append(gr.update(value=None, visible=False))
+                file_updates.append(gr.update(value=None, visible=False))
+
+        selected_value = generated_paths[0] if generated_paths else None
+        status = (
+            f"{len(generated_paths)}件の候補を生成しました。気に入った候補はWAVを確認し、"
+            "履歴から別セリフ生成や声のクローンに使えます。"
+        )
+        return (
+            *audio_updates,
+            *file_updates,
+            gr.update(choices=_list_voice_design_history(), value=selected_value),
+            status,
+        )
 
     def _refresh_voice_design_history():
         return _history_dropdown_update()
@@ -2098,6 +2165,27 @@ def create_demo_interface(demo: VoxCPMDemo):
                     with gr.Column():
                         design_output = gr.Audio(label="生成された音声")
                         design_file = gr.File(label="WAVダウンロード", interactive=False)
+                        with gr.Group(visible=False) as design_qwen3_gacha_group:
+                            with gr.Accordion("声ガチャ", open=True):
+                                gr.Markdown(
+                                    "同じ声の指示から複数候補を生成します。気に入った候補はWAVとして保存され、履歴から再利用できます。"
+                                )
+                                design_gacha_count = gr.Dropdown(
+                                    choices=[2, 3, 4],
+                                    value=3,
+                                    label="候補数",
+                                    info="候補を増やすほど生成時間とVRAM使用時間が増えます。",
+                                )
+                                design_gacha_btn = gr.Button("声ガチャ生成", variant="primary")
+                                design_gacha_status = gr.Markdown("")
+                                design_gacha_audio_1 = gr.Audio(label="候補 1", visible=False)
+                                design_gacha_file_1 = gr.File(label="候補 1 WAV", interactive=False, visible=False)
+                                design_gacha_audio_2 = gr.Audio(label="候補 2", visible=False)
+                                design_gacha_file_2 = gr.File(label="候補 2 WAV", interactive=False, visible=False)
+                                design_gacha_audio_3 = gr.Audio(label="候補 3", visible=False)
+                                design_gacha_file_3 = gr.File(label="候補 3 WAV", interactive=False, visible=False)
+                                design_gacha_audio_4 = gr.Audio(label="候補 4", visible=False)
+                                design_gacha_file_4 = gr.File(label="候補 4 WAV", interactive=False, visible=False)
                         gr.Markdown(
                             "**使い方**\n\n"
                             "1. 声の指示に、声質や話し方を書きます。\n"
@@ -2158,6 +2246,36 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[design_output, design_file, design_history],
                     show_progress=True,
                     api_name="design",
+                )
+                design_gacha_btn.click(
+                    fn=_generate_voice_gacha,
+                    inputs=[
+                        engine_selector,
+                        design_text,
+                        design_voice_age,
+                        design_voice_gender,
+                        design_voice_features,
+                        design_control,
+                        design_intonation,
+                        design_word_accent,
+                        design_language,
+                        design_filename,
+                        design_gacha_count,
+                    ],
+                    outputs=[
+                        design_gacha_audio_1,
+                        design_gacha_audio_2,
+                        design_gacha_audio_3,
+                        design_gacha_audio_4,
+                        design_gacha_file_1,
+                        design_gacha_file_2,
+                        design_gacha_file_3,
+                        design_gacha_file_4,
+                        design_history,
+                        design_gacha_status,
+                    ],
+                    show_progress=True,
+                    api_name="voice_gacha",
                 )
                 design_history_refresh.click(
                     fn=_refresh_voice_design_history,
@@ -2457,6 +2575,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             design_word_accent_group,
             design_prosody_group,
             design_advanced_group,
+            design_qwen3_gacha_group,
             clone_irodori_profile_group,
             clone_qwen3_ref_text_group,
             clone_language,

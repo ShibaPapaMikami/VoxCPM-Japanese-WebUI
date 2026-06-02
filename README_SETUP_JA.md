@@ -83,7 +83,7 @@ Irodori-TTSは日本語専用です。多言語生成や高精度クローンを
 
 ## VoiceDesignCloner連携（Qwen3-TTS・簡易）を追加する場合
 
-VoiceDesignCloner連携（Qwen3-TTS・簡易）は、多言語の声デザインと、参照音声+文字起こしによる1文ずつの簡易クローンに対応する任意エンジンです。Voice-Design-ClonerのQwen3-TTSワークフローを参考に、このWeb UIから呼び出せるようにしています。
+VoiceDesignCloner連携（Qwen3-TTS・簡易）は、多言語の声デザイン、声ガチャ、参照音声+文字起こしによる1文ずつの簡易クローンに対応する任意エンジンです。Voice-Design-ClonerのQwen3-TTSワークフローを参考に、このWeb UIから呼び出せるようにしています。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\setup_qwen3_tts.ps1
@@ -98,6 +98,7 @@ Voice-Design-Cloner本体のコーパス一括音声化、LoRA学習、リサン
 ## 主な使い方
 
 - 声のデザイン: 参照音声なしで声を作る
+- 声ガチャ: VoiceDesignCloner連携で複数候補を生成して試聴する
 - 声のデザイン履歴から再利用: 作った声を参照音声として別セリフに使う
 - 声のクローン: 参照音声の声質で別テキストを読む
 - 高精度クローン: 参照音声と文字起こしを使って再現度を上げる
