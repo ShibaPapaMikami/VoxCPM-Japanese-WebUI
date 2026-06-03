@@ -916,8 +916,8 @@ class VoxCPMDemo:
         return (
             "VoiceDesignCloner連携（Qwen3-TTS・簡易）を使用します。Voice-Design-ClonerのQwen3-TTSワークフローを参考に、"
             "多言語の声デザイン、声ガチャ、参照音声+文字起こしによる簡易クローン、"
-            "選んだ声での簡易コーパス一括音声化、リサンプル、esd.list生成に対応しています。"
-            "Irodori-TTS LoRA学習とStyle-Bert-VITS2向けの完全自動配置はまだ統合していません。"
+            "選んだ声での簡易コーパス一括音声化、リサンプル、esd.list生成、Irodori-TTS LoRA学習データ準備に対応しています。"
+            "LoRA学習の実行とStyle-Bert-VITS2向けの完全自動配置はまだ統合していません。"
         )
 
     def generate_qwen3_audio(
@@ -1355,6 +1355,11 @@ def create_demo_interface(demo: VoxCPMDemo):
             raise ValueError("Neutral.txt に利用できる本文がありません。")
         return text_map
 
+    def _lora_lab_root() -> Path:
+        root = _output_dir() / "lora_data" / "lab"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
     def _resample_corpus_raw(folder_path: str, target_sr: int, progress=gr.Progress()):
         base_dir = _resolve_corpus_output_folder(folder_path)
         raw_dir = base_dir / "raw"
@@ -1409,6 +1414,75 @@ def create_demo_interface(demo: VoxCPMDemo):
         if skipped:
             message += f"\n本文が見つからずスキップ: {len(skipped)}件"
         return message, str(esd_path)
+
+    def _prepare_irodori_lora_data(
+        folder_path: str,
+        speaker_name: str,
+        emotion_name: str,
+        wav_folder_name: str,
+    ):
+        base_dir = _resolve_corpus_output_folder(folder_path)
+        text_map = _load_corpus_text_map(base_dir)
+        wav_folder = (wav_folder_name or "raw").strip()
+        if wav_folder not in {"raw", "resampled"}:
+            raise ValueError("WAVフォルダは raw または resampled を選んでください。")
+        source_wav_dir = base_dir / wav_folder
+        if not source_wav_dir.is_dir():
+            raise ValueError(f"{wav_folder}フォルダが見つかりません: {source_wav_dir}")
+        wav_files = sorted(source_wav_dir.glob("*.wav"))
+        if not wav_files:
+            raise ValueError(f"{wav_folder}フォルダにWAVがありません。")
+
+        speaker = _sanitize_filename(speaker_name) or _sanitize_filename(base_dir.name) or "speaker"
+        emotion = _sanitize_filename(emotion_name) or "Neutral"
+        lab_root = _lora_lab_root()
+        dest_dir = lab_root / speaker / emotion
+        dest_wavs = dest_dir / "wavs"
+        resolved_lab_root = lab_root.resolve()
+        resolved_dest_wavs = dest_wavs.resolve()
+        if resolved_lab_root not in resolved_dest_wavs.parents:
+            raise ValueError("LoRA学習データの出力先を安全に解決できませんでした。")
+        if dest_wavs.exists():
+            shutil.rmtree(dest_wavs)
+        dest_wavs.mkdir(parents=True, exist_ok=True)
+
+        txt_lines = []
+        jsonl_rows = []
+        skipped = []
+        for wav_path in wav_files:
+            text = text_map.get(wav_path.name) or text_map.get(wav_path.stem)
+            if not text:
+                skipped.append(wav_path.name)
+                continue
+            dest_wav = dest_wavs / wav_path.name
+            shutil.copy2(wav_path, dest_wav)
+            txt_lines.append(f"{wav_path.stem}: {text}")
+            jsonl_rows.append(
+                json.dumps(
+                    {"audio": str(dest_wav.resolve()), "text": text},
+                    ensure_ascii=False,
+                )
+            )
+
+        if not txt_lines:
+            raise ValueError(f"{wav_folder}/*.wav と Neutral.txt の対応が見つかりませんでした。")
+
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        lab_text_path = dest_dir / f"{emotion}.txt"
+        lab_text_path.write_text("\n".join(txt_lines) + "\n", encoding="utf-8")
+        jsonl_path = _output_dir() / "lora_data" / f"{speaker}_{emotion}.jsonl"
+        jsonl_path.write_text("\n".join(jsonl_rows) + "\n", encoding="utf-8")
+
+        status = (
+            f"{len(txt_lines)}件をIrodori-TTS LoRA学習用データに変換しました。\n\n"
+            f"- lab: `{dest_dir}`\n"
+            f"- wavs: `{dest_wavs}`\n"
+            f"- text: `{lab_text_path}`\n"
+            f"- jsonl: `{jsonl_path}`"
+        )
+        if skipped:
+            status += f"\n\n本文が見つからずスキップ: {len(skipped)}件"
+        return status, str(dest_dir), str(lab_text_path), str(jsonl_path)
 
     def _save_wav_for_download(sr: int, wav_np: np.ndarray, prefix: str, filename_hint: str = "") -> str:
         output_dir = _output_dir()
@@ -2691,11 +2765,17 @@ def create_demo_interface(demo: VoxCPMDemo):
                             clone_corpus_status = gr.Markdown("")
                             clone_corpus_output_dir = gr.Textbox(
                                 value="",
-                                label="コーパスフォルダ（生成後に自動入力・貼り付け可）",
+                                label="生成したコーパス出力フォルダ",
+                                interactive=False,
+                            )
+                            clone_corpus_text_list_file = gr.File(label="Neutral.txt", interactive=False)
+                            clone_corpus_tools_dir = gr.Textbox(
+                                value="",
+                                label="前処理するコーパスフォルダ（貼り付け可）",
+                                placeholder="例: D:\\AIProduct\\VoxCPM\\outputs\\qwen3_corpus_sample_20260603_120000",
                                 interactive=True,
                             )
-                            clone_corpus_open_dir = gr.Button("コーパスフォルダを開く", variant="secondary", size="sm")
-                            clone_corpus_text_list_file = gr.File(label="Neutral.txt", interactive=False)
+                            clone_corpus_open_dir = gr.Button("前処理フォルダを開く", variant="secondary", size="sm")
                             gr.Markdown(
                                 "**Style-Bert-VITS2向け前処理**\n\n"
                                 "`raw/*.wav` と `Neutral.txt` から、リサンプル済みWAVと `esd.list` を作成します。"
@@ -2733,6 +2813,43 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 lines=3,
                             )
                             clone_corpus_esd_file = gr.File(label="esd.list", interactive=False)
+                            gr.Markdown(
+                                "**Irodori-TTS LoRA学習データ準備**\n\n"
+                                "生成済みコーパスをIrodori-TTSのLoRA学習で使う `lab/{話者}/{感情}` 形式へ変換します。"
+                            )
+                            with gr.Row():
+                                clone_lora_speaker = gr.Textbox(
+                                    value="",
+                                    label="LoRA話者名",
+                                    placeholder="例: honoka",
+                                    lines=1,
+                                )
+                                clone_lora_emotion = gr.Textbox(
+                                    value="Neutral",
+                                    label="感情ラベル",
+                                    placeholder="例: Neutral",
+                                    lines=1,
+                                )
+                            clone_lora_wav_folder = gr.Dropdown(
+                                choices=["raw", "resampled"],
+                                value="resampled",
+                                label="学習に使うWAVフォルダ",
+                                info="resampledを使う場合は、先にリサンプルを実行してください。",
+                            )
+                            clone_lora_prepare_btn = gr.Button("LoRA学習データを準備", variant="secondary")
+                            clone_lora_prepare_status = gr.Textbox(
+                                value="",
+                                label="LoRA学習データ準備結果",
+                                interactive=False,
+                                lines=6,
+                            )
+                            clone_lora_lab_dir = gr.Textbox(
+                                value="",
+                                label="LoRA labフォルダ",
+                                interactive=False,
+                            )
+                            clone_lora_lab_text_file = gr.File(label="labテキスト", interactive=False)
+                            clone_lora_jsonl_file = gr.File(label="training JSONL", interactive=False)
                         gr.Markdown(
                             "**使い方**\n\n"
                             "1. クローンしたい声の音声をアップロードするか、声のデザイン履歴から選びます。\n"
@@ -2785,7 +2902,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 )
                 clone_corpus_open_dir.click(
                     fn=_open_existing_folder,
-                    inputs=[clone_corpus_output_dir],
+                    inputs=[clone_corpus_tools_dir],
                     outputs=[clone_corpus_status],
                     show_progress=False,
                     api_name=None,
@@ -2793,17 +2910,34 @@ def create_demo_interface(demo: VoxCPMDemo):
                 )
                 clone_corpus_resample_btn.click(
                     fn=_resample_corpus_raw,
-                    inputs=[clone_corpus_output_dir, clone_corpus_resample_sr],
+                    inputs=[clone_corpus_tools_dir, clone_corpus_resample_sr],
                     outputs=[clone_corpus_resample_status],
                     show_progress=True,
                     api_name="qwen3_corpus_resample",
                 )
                 clone_corpus_esd_btn.click(
                     fn=_generate_corpus_esd_list,
-                    inputs=[clone_corpus_output_dir, clone_corpus_speaker, clone_corpus_esd_lang],
+                    inputs=[clone_corpus_tools_dir, clone_corpus_speaker, clone_corpus_esd_lang],
                     outputs=[clone_corpus_esd_status, clone_corpus_esd_file],
                     show_progress=True,
                     api_name="qwen3_corpus_esd_list",
+                )
+                clone_lora_prepare_btn.click(
+                    fn=_prepare_irodori_lora_data,
+                    inputs=[
+                        clone_corpus_tools_dir,
+                        clone_lora_speaker,
+                        clone_lora_emotion,
+                        clone_lora_wav_folder,
+                    ],
+                    outputs=[
+                        clone_lora_prepare_status,
+                        clone_lora_lab_dir,
+                        clone_lora_lab_text_file,
+                        clone_lora_jsonl_file,
+                    ],
+                    show_progress=True,
+                    api_name="qwen3_prepare_irodori_lora_data",
                 )
                 clone_history_refresh.click(
                     fn=_refresh_voice_design_history,
