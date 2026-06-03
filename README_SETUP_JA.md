@@ -24,7 +24,7 @@ PowerShellで以下を実行します。
 ```powershell
 git clone https://github.com/ShibaPapaMikami/VoxCPM-Japanese-WebUI.git
 cd VoxCPM-Japanese-WebUI
-powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda.ps1
+powershell -ExecutionPolicy Bypass -File scripts\setup_all_windows.ps1
 ```
 
 起動後、ブラウザで開きます。
@@ -36,7 +36,7 @@ http://127.0.0.1:8808/
 同じLAN内の別端末から使う場合は、起動PCのIPアドレスを使います。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda.ps1 -HostAddress 0.0.0.0
+powershell -ExecutionPolicy Bypass -File scripts\setup_all_windows.ps1 -SkipBaseSetup -HostAddress 0.0.0.0
 ```
 
 ```text
@@ -46,7 +46,7 @@ http://<起動PCのIPアドレス>:8808/
 必要ならWindowsファイアウォールを許可します。既定ではプライベートネットワークだけを許可します。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\allow_firewall_8808.ps1
+powershell -ExecutionPolicy Bypass -File scripts\setup_all_windows.ps1 -SkipBaseSetup -NoLaunch -AllowFirewall
 ```
 
 ## 2回目以降の起動
@@ -54,13 +54,28 @@ powershell -ExecutionPolicy Bypass -File scripts\allow_firewall_8808.ps1
 セットアップ済みなら、依存関係の再インストールを省略できます。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install_and_launch_windows_cuda.ps1 -SkipSetup
+powershell -ExecutionPolicy Bypass -File scripts\setup_all_windows.ps1 -SkipBaseSetup
 ```
 
 またはランチャーだけ使います。
 
 ```powershell
 .\VoxCPM_WebUI.cmd
+```
+
+## 任意エンジンもまとめて入れる場合
+
+Irodori-TTSとQwen3-TTSも一緒にセットアップする場合は、初回に以下を実行します。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_all_windows.ps1 -AllEngines
+```
+
+個別に追加する場合は、`-WithIrodori` または `-WithQwen3` を指定します。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_all_windows.ps1 -WithIrodori
+powershell -ExecutionPolicy Bypass -File scripts\setup_all_windows.ps1 -WithQwen3
 ```
 
 ## モデルについて
