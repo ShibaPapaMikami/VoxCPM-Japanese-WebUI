@@ -2000,6 +2000,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             not_irodori,
             voxcpm_only,
             qwen3_only,
+            gr.update(visible=not is_qwen3),
+            qwen3_only,
             irodori_only,
             irodori_only,
             irodori_only,
@@ -2796,13 +2798,21 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 cfg_default=2.6,
                             )
                         design_btn = gr.Button("この声を生成", variant="primary", size="lg")
+                        with gr.Group(visible=False) as design_qwen3_single_group:
+                            gr.Markdown(
+                                "**単発生成**\n\n"
+                                "声の指示からQwen3-TTSで候補を1つだけ生成します。"
+                                "下の声ガチャは、同じ処理を複数回まわして候補を比べる機能です。"
+                            )
+                            design_qwen3_single_btn = gr.Button("1つだけ生成（単発）", variant="primary", size="lg")
                     with gr.Column():
                         design_output = gr.Audio(label="生成された音声")
                         design_file = gr.File(label="WAVダウンロード", interactive=False)
                         with gr.Group(visible=False) as design_qwen3_gacha_group:
-                            with gr.Accordion("声ガチャ", open=True):
+                            with gr.Accordion("声ガチャ（複数候補）", open=True):
                                 gr.Markdown(
-                                    "同じ声の指示から複数候補を生成します。気に入った候補はWAVとして保存され、履歴から再利用できます。"
+                                    "単発生成と同じQwen3-TTSの声デザイン処理を複数回実行します。"
+                                    "気に入った候補はWAVとして保存され、履歴から再利用できます。"
                                 )
                                 design_gacha_count = gr.Dropdown(
                                     choices=[2, 3, 4],
@@ -2824,7 +2834,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                             "**使い方**\n\n"
                             "1. 声の指示に、声質や話し方を書きます。\n"
                             "2. 読み上げたい文章を入力します。\n"
-                            "3. 「この声を生成」を押します。"
+                            "3. 表示されている生成ボタンを押します。"
                         )
                         with gr.Accordion("声のデザイン履歴から再利用", open=True):
                             gr.Markdown(
@@ -2888,6 +2898,29 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[design_output, design_file, design_history],
                     show_progress=True,
                     api_name="design",
+                )
+                design_qwen3_single_btn.click(
+                    fn=_generate_design,
+                    inputs=[
+                        engine_selector,
+                        design_text,
+                        design_voice_age,
+                        design_voice_gender,
+                        design_voice_features,
+                        design_control,
+                        design_intonation,
+                        design_word_accent,
+                        design_language,
+                        design_irodori_lora,
+                        design_filename,
+                        design_cfg,
+                        design_normalize,
+                        design_steps,
+                    ],
+                    outputs=[design_output, design_file, design_history],
+                    show_progress=True,
+                    api_name=None,
+                    api_visibility="private",
                 )
                 design_gacha_btn.click(
                     fn=_generate_voice_gacha,
@@ -3546,6 +3579,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             design_prosody_group,
             design_advanced_group,
             design_qwen3_gacha_group,
+            design_btn,
+            design_qwen3_single_group,
             clone_irodori_profile_group,
             design_irodori_lora_group,
             design_reuse_irodori_lora_group,
