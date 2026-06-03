@@ -1484,6 +1484,198 @@ def create_demo_interface(demo: VoxCPMDemo):
             status += f"\n\n本文が見つからずスキップ: {len(skipped)}件"
         return status, str(dest_dir), str(lab_text_path), str(jsonl_path)
 
+    def _resolve_lora_lab_dir(lab_dir_path: str) -> Path:
+        if not (lab_dir_path or "").strip():
+            raise ValueError("学習するlabフォルダを指定してください。")
+        lab_dir = Path(os.path.expandvars(os.path.expanduser(lab_dir_path.strip())))
+        if not lab_dir.is_absolute():
+            lab_dir = _lora_lab_root() / lab_dir
+        lab_dir = lab_dir.resolve()
+        lab_root = _lora_lab_root().resolve()
+        if lab_root not in lab_dir.parents:
+            raise ValueError("現在の保存先フォルダ内の lora_data/lab 配下だけ学習できます。")
+        if not lab_dir.is_dir():
+            raise ValueError(f"labフォルダが見つかりません: {lab_dir}")
+        return lab_dir
+
+    def _write_lora_training_jsonl_from_lab(lab_dir: Path) -> tuple[str, str, Path]:
+        speaker = _sanitize_filename(lab_dir.parent.name) or "speaker"
+        emotion = _sanitize_filename(lab_dir.name) or "Neutral"
+        text_file = lab_dir / f"{emotion}.txt"
+        wav_dir = lab_dir / "wavs"
+        if not text_file.is_file():
+            raise ValueError(f"labテキストが見つかりません: {text_file}")
+        if not wav_dir.is_dir():
+            raise ValueError(f"wavsフォルダが見つかりません: {wav_dir}")
+
+        rows = []
+        for line in text_file.read_text(encoding="utf-8").splitlines():
+            clean = line.strip()
+            if not clean or ":" not in clean:
+                continue
+            file_id, text = clean.split(":", 1)
+            stem = file_id.strip()
+            wav_path = wav_dir / f"{stem}.wav"
+            if wav_path.is_file():
+                rows.append(json.dumps({"audio": str(wav_path.resolve()), "text": text.strip()}, ensure_ascii=False))
+        if not rows:
+            raise ValueError("labテキストとWAVの対応が見つかりませんでした。")
+
+        jsonl_dir = _output_dir() / "lora_data" / "jsonl"
+        jsonl_dir.mkdir(parents=True, exist_ok=True)
+        jsonl_path = jsonl_dir / f"{speaker}_{emotion}.jsonl"
+        jsonl_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+        return speaker, emotion, jsonl_path
+
+    def _irodori_python_path() -> Path:
+        project_dir = demo.irodori_project_dir()
+        if sys.platform.startswith("win"):
+            return project_dir / ".venv" / "Scripts" / "python.exe"
+        return project_dir / ".venv" / "bin" / "python"
+
+    def _lora_training_paths(speaker: str) -> tuple[Path, Path, Path]:
+        base_dir = _output_dir() / "lora_data"
+        latent_dir = base_dir / "latents" / speaker
+        manifest_path = base_dir / "manifests" / f"{speaker}_manifest.jsonl"
+        output_dir = _output_dir() / "lora" / speaker
+        return latent_dir, manifest_path, output_dir
+
+    def _run_subprocess_lines(command: list[str], cwd: Path):
+        process = subprocess.Popen(
+            command,
+            cwd=str(cwd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        try:
+            assert process.stdout is not None
+            for line in process.stdout:
+                yield line.rstrip()
+            process.wait()
+            if process.returncode != 0:
+                raise RuntimeError(f"コマンドが失敗しました（exit={process.returncode}）: {' '.join(command)}")
+        except GeneratorExit:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+            raise
+
+    def _run_irodori_lora_training(
+        lab_dir_path: str,
+        max_steps: int,
+        batch_size: int,
+        num_workers: int,
+        learning_rate: float,
+        dry_run: bool,
+    ):
+        logs: list[str] = []
+
+        def emit(status: str):
+            return status, "\n".join(logs[-80:])
+
+        try:
+            lab_dir = _resolve_lora_lab_dir(lab_dir_path)
+            speaker, emotion, jsonl_path = _write_lora_training_jsonl_from_lab(lab_dir)
+            irodori_root = demo.irodori_project_dir()
+            irodori_python = _irodori_python_path()
+            encode_script = Path.cwd() / "scripts" / "encode_irodori_latents.py"
+            train_script = irodori_root / "train.py"
+            train_config = irodori_root / "configs" / "train_500m_v3_lora.yaml"
+            latent_dir, manifest_path, output_dir = _lora_training_paths(speaker)
+            max_steps_i = max(1, int(max_steps or 50))
+            batch_i = max(1, int(batch_size or 1))
+            workers_i = max(0, int(num_workers or 0))
+            lr_value = float(learning_rate or 0.0001)
+
+            for required in (irodori_python, encode_script, train_script, train_config):
+                if not required.exists():
+                    raise RuntimeError(f"必要なファイルが見つかりません: {required}")
+
+            encode_command = [
+                str(irodori_python),
+                str(encode_script),
+                "--input-jsonl",
+                str(jsonl_path),
+                "--latent-dir",
+                str(latent_dir),
+                "--manifest",
+                str(manifest_path),
+            ]
+            checkpoint_command = [
+                str(irodori_python),
+                "-c",
+                (
+                    "from huggingface_hub import hf_hub_download; "
+                    "print(hf_hub_download('Aratako/Irodori-TTS-500M-v3', 'model.safetensors'))"
+                ),
+            ]
+            train_command_template = [
+                str(irodori_python),
+                str(train_script),
+                "--config",
+                str(train_config),
+                "--manifest",
+                str(manifest_path),
+                "--init-checkpoint",
+                "<downloaded model.safetensors>",
+                "--output-dir",
+                str(output_dir),
+                "--lora",
+                "--max-steps",
+                str(max_steps_i),
+                "--batch-size",
+                str(batch_i),
+                "--num-workers",
+                str(workers_i),
+                "--lr",
+                str(lr_value),
+            ]
+
+            logs.append(f"[準備] lab={lab_dir}")
+            logs.append(f"[準備] jsonl={jsonl_path}")
+            logs.append("[コマンド] latent encode:")
+            logs.append(" ".join(encode_command))
+            logs.append("[コマンド] checkpoint:")
+            logs.append(" ".join(checkpoint_command))
+            logs.append("[コマンド] train:")
+            logs.append(" ".join(train_command_template))
+            if dry_run:
+                yield emit("ドライラン完了。チェックを外すと実際にlatentエンコードとLoRA学習を実行します。")
+                return
+
+            yield emit("latentエンコードを開始します。")
+            for line in _run_subprocess_lines(encode_command, irodori_root):
+                logs.append(line)
+                yield emit("latentエンコード中...")
+            if not manifest_path.is_file():
+                raise RuntimeError(f"manifestが生成されませんでした: {manifest_path}")
+
+            yield emit("初期チェックポイントを確認しています。")
+            checkpoint_lines = list(_run_subprocess_lines(checkpoint_command, irodori_root))
+            logs.extend(checkpoint_lines)
+            init_checkpoint = checkpoint_lines[-1].strip() if checkpoint_lines else ""
+            if not init_checkpoint or not Path(init_checkpoint).is_file():
+                raise RuntimeError("初期チェックポイントを取得できませんでした。")
+
+            train_command = train_command_template.copy()
+            train_command[train_command.index("<downloaded model.safetensors>")] = init_checkpoint
+            output_dir.mkdir(parents=True, exist_ok=True)
+            yield emit("LoRA学習を開始します。")
+            for line in _run_subprocess_lines(train_command, irodori_root):
+                logs.append(line)
+                yield emit("LoRA学習中...")
+            yield emit(f"LoRA学習が完了しました。出力先: {output_dir}")
+        except Exception as e:
+            logs.append(f"ERROR: {e}")
+            yield emit(f"LoRA学習の準備または実行に失敗しました: {e}")
+
     def _save_wav_for_download(sr: int, wav_np: np.ndarray, prefix: str, filename_hint: str = "") -> str:
         output_dir = _output_dir()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -2850,6 +3042,55 @@ def create_demo_interface(demo: VoxCPMDemo):
                             )
                             clone_lora_lab_text_file = gr.File(label="labテキスト", interactive=False)
                             clone_lora_jsonl_file = gr.File(label="training JSONL", interactive=False)
+                            gr.Markdown(
+                                "**LoRA学習実行（実験）**\n\n"
+                                "既定ではドライランです。実学習を行う場合はドライランを外してください。"
+                            )
+                            clone_lora_train_lab_dir = gr.Textbox(
+                                value="",
+                                label="学習するlabフォルダ（貼り付け可）",
+                                placeholder="例: D:\\AIProduct\\VoxCPM\\outputs\\lora_data\\lab\\honoka\\Neutral",
+                                interactive=True,
+                            )
+                            with gr.Row():
+                                clone_lora_train_steps = gr.Number(
+                                    value=50,
+                                    label="学習ステップ数",
+                                    precision=0,
+                                )
+                                clone_lora_train_batch = gr.Number(
+                                    value=1,
+                                    label="バッチサイズ",
+                                    precision=0,
+                                )
+                                clone_lora_train_workers = gr.Number(
+                                    value=0,
+                                    label="ワーカー数",
+                                    precision=0,
+                                )
+                            clone_lora_train_lr = gr.Number(
+                                value=0.0001,
+                                label="学習率",
+                            )
+                            clone_lora_train_dry_run = gr.Checkbox(
+                                value=True,
+                                label="ドライラン（コマンド確認のみ）",
+                            )
+                            with gr.Row():
+                                clone_lora_train_btn = gr.Button("LoRA学習を開始", variant="primary")
+                                clone_lora_train_stop_btn = gr.Button("停止", variant="stop")
+                            clone_lora_train_status = gr.Textbox(
+                                value="",
+                                label="LoRA学習ステータス",
+                                interactive=False,
+                                lines=3,
+                            )
+                            clone_lora_train_log = gr.Textbox(
+                                value="",
+                                label="LoRA学習ログ",
+                                interactive=False,
+                                lines=12,
+                            )
                         gr.Markdown(
                             "**使い方**\n\n"
                             "1. クローンしたい声の音声をアップロードするか、声のデザイン履歴から選びます。\n"
@@ -2938,6 +3179,26 @@ def create_demo_interface(demo: VoxCPMDemo):
                     ],
                     show_progress=True,
                     api_name="qwen3_prepare_irodori_lora_data",
+                )
+                lora_train_event = clone_lora_train_btn.click(
+                    fn=_run_irodori_lora_training,
+                    inputs=[
+                        clone_lora_train_lab_dir,
+                        clone_lora_train_steps,
+                        clone_lora_train_batch,
+                        clone_lora_train_workers,
+                        clone_lora_train_lr,
+                        clone_lora_train_dry_run,
+                    ],
+                    outputs=[clone_lora_train_status, clone_lora_train_log],
+                    show_progress=True,
+                    api_name="qwen3_run_irodori_lora_training",
+                )
+                clone_lora_train_stop_btn.click(
+                    fn=None,
+                    cancels=[lora_train_event],
+                    api_name=None,
+                    api_visibility="private",
                 )
                 clone_history_refresh.click(
                     fn=_refresh_voice_design_history,
