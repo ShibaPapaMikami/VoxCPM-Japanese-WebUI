@@ -93,6 +93,8 @@ powershell -ExecutionPolicy Bypass -File scripts\setup_qwen3_tts.ps1
 
 Qwen3-TTSの声のクローンでは、参照音声の文字起こしが必要です。Qwen3-TTSで作った声のデザイン履歴は、WAVの横に `.txt` を保存するため、そのまま履歴再利用できます。コーパス一括音声化では、1行1文のテキストから `raw/*.wav` と `Neutral.txt` を生成します。必要に応じて `resampled/`、`esd.list`、Irodori-TTS LoRA学習用の `lora_data/lab/{話者}/{感情}` も作成できます。LoRA学習実行は既定でドライランです。実学習ではGPUと時間を使うため、少ないステップ数から試してください。
 
+LoRA学習後は、音声エンジンで `Irodori-TTS（日本語特化・実験）` を選び、声のデザインまたは声のクローンタブの「Irodori LoRAアダプタ」から学習済みアダプタを選択できます。
+
 Voice-Design-Cloner本体のStyle-Bert-VITS2向け完全自動配置は、現時点ではまだ未統合です。
 
 ## 主な使い方
@@ -103,6 +105,7 @@ Voice-Design-Cloner本体のStyle-Bert-VITS2向け完全自動配置は、現時
 - リサンプル・esd.list生成: 生成したコーパスをStyle-Bert-VITS2向けの入口形式に整える
 - LoRA学習データ準備: 生成したコーパスをIrodori-TTSの学習用lab形式に変換する
 - LoRA学習実行: ドライランでコマンドを確認し、必要に応じて実学習を開始する
+- LoRA推論: Irodori-TTS選択時に学習済みLoRAアダプタを適用して生成する
 - 声のデザイン履歴から再利用: 作った声を参照音声として別セリフに使う
 - 声のクローン: 参照音声の声質で別テキストを読む
 - 高精度クローン: 参照音声と文字起こしを使って再現度を上げる

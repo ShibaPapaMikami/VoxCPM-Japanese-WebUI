@@ -833,6 +833,7 @@ class VoxCPMDemo:
         output_wav_path: str,
         reference_wav_path_input: Optional[str] = None,
         caption_input: str = "",
+        lora_adapter_path_input: str = "",
     ) -> Tuple[int, np.ndarray]:
         text = (text_input or "").strip()
         if not text:
@@ -870,6 +871,9 @@ class VoxCPMDemo:
             command.extend(["--ref-wav", str(reference_wav_path_input)])
         else:
             command.append("--no-ref")
+        lora_adapter = (lora_adapter_path_input or "").strip()
+        if lora_adapter:
+            command.extend(["--lora-adapter", lora_adapter])
 
         logger.info("Running Irodori-TTS inference...")
         env = os.environ.copy()
@@ -916,8 +920,8 @@ class VoxCPMDemo:
         return (
             "VoiceDesignCloner連携（Qwen3-TTS・簡易）を使用します。Voice-Design-ClonerのQwen3-TTSワークフローを参考に、"
             "多言語の声デザイン、声ガチャ、参照音声+文字起こしによる簡易クローン、"
-            "選んだ声での簡易コーパス一括音声化、リサンプル、esd.list生成、Irodori-TTS LoRA学習データ準備に対応しています。"
-            "LoRA学習の実行とStyle-Bert-VITS2向けの完全自動配置はまだ統合していません。"
+            "選んだ声での簡易コーパス一括音声化、リサンプル、esd.list生成、Irodori-TTS LoRA学習データ準備、"
+            "LoRA学習実行入口に対応しています。Style-Bert-VITS2向けの完全自動配置はまだ統合していません。"
         )
 
     def generate_qwen3_audio(
@@ -1540,6 +1544,51 @@ def create_demo_interface(demo: VoxCPMDemo):
         output_dir = _output_dir() / "lora" / speaker
         return latent_dir, manifest_path, output_dir
 
+    def _is_lora_adapter_dir(path: Path) -> bool:
+        if not path.is_dir():
+            return False
+        has_config = (path / "adapter_config.json").is_file()
+        has_weights = (path / "adapter_model.safetensors").is_file() or (path / "adapter_model.bin").is_file()
+        return has_config and has_weights
+
+    def _resolve_lora_adapter_dir(folder: Path) -> Optional[Path]:
+        if _is_lora_adapter_dir(folder):
+            return folder
+        candidates = [p for p in folder.rglob("adapter_config.json") if _is_lora_adapter_dir(p.parent)]
+        if not candidates:
+            return None
+
+        def sort_key(config_path: Path):
+            parts = "/".join(config_path.parts).lower()
+            final_rank = 0 if ("final" in parts or "last" in parts) else 1
+            return final_rank, -config_path.stat().st_mtime
+
+        return sorted(candidates, key=sort_key)[0].parent
+
+    def _list_irodori_lora_adapters() -> list[tuple[str, str]]:
+        lora_root = _output_dir(create=False) / "lora"
+        choices: list[tuple[str, str]] = [("使用しない", "")]
+        if not lora_root.is_dir():
+            return choices
+        for speaker_dir in sorted((p for p in lora_root.iterdir() if p.is_dir()), key=lambda p: p.name.lower()):
+            adapter_dir = _resolve_lora_adapter_dir(speaker_dir)
+            if adapter_dir is None:
+                continue
+            try:
+                updated = datetime.fromtimestamp(adapter_dir.stat().st_mtime).strftime("%m/%d %H:%M")
+            except OSError:
+                updated = ""
+            label = f"{speaker_dir.name} - {adapter_dir.name}"
+            if updated:
+                label = f"{label} ({updated})"
+            choices.append((label, str(adapter_dir)))
+        return choices
+
+    def _lora_adapter_dropdown_update():
+        choices = _list_irodori_lora_adapters()
+        value = choices[0][1] if choices else ""
+        return gr.update(choices=choices, value=value)
+
     def _run_subprocess_lines(command: list[str], cwd: Path):
         process = subprocess.Popen(
             command,
@@ -1763,6 +1812,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         control_instruction: str = "",
         voice_age: str = "",
         voice_gender: str = "",
+        lora_adapter: str = "",
     ):
         temp_path = _output_dir() / f"_irodori_tmp_{uuid4().hex[:8]}.wav"
         styled_text = _build_irodori_style_text(text, style_features, control_instruction)
@@ -1774,6 +1824,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 output_wav_path=str(temp_path),
                 reference_wav_path_input=prepared_reference,
                 caption_input=caption,
+                lora_adapter_path_input=lora_adapter,
             )
             output_path = _save_wav_for_download(sr, wav_np, prefix, filename_hint)
             return (sr, wav_np), output_path
@@ -1913,6 +1964,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             voxcpm_only,
             qwen3_only,
             irodori_only,
+            irodori_only,
+            irodori_only,
             qwen3_only,
             qwen3_only,
             qwen3_only,
@@ -1963,6 +2016,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         intonation_instruction: str,
         word_accent_instruction: str,
         target_language: str,
+        irodori_lora_adapter: str,
         filename_hint: str,
         cfg_value: float,
         do_normalize: bool,
@@ -1978,6 +2032,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 control_instruction="",
                 voice_age=voice_age,
                 voice_gender=voice_gender,
+                lora_adapter=irodori_lora_adapter,
             )
             return audio, output_path, gr.update(choices=_list_voice_design_history(), value=None)
 
@@ -2133,6 +2188,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         history_wav: Optional[str],
         text: str,
         target_language: str,
+        irodori_lora_adapter: str,
         filename_hint: str,
         cfg_value: float,
         do_normalize: bool,
@@ -2147,6 +2203,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 prefix="irodori_history_reuse",
                 filename_hint=filename_hint,
                 reference_wav=history_wav,
+                lora_adapter=irodori_lora_adapter,
             )
         if _engine_is_qwen3(engine_label):
             reference_text = _read_reference_text_sidecar(history_wav)
@@ -2192,6 +2249,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         history_wav: Optional[str],
         qwen3_ref_text: str,
         target_language: str,
+        irodori_lora_adapter: str,
         filename_hint: str,
         cfg_value: float,
         do_normalize: bool,
@@ -2210,6 +2268,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 control_instruction="",
                 voice_age=voice_age,
                 voice_gender=voice_gender,
+                lora_adapter=irodori_lora_adapter,
             )
         if _engine_is_qwen3(engine_label):
             reference_text = (qwen3_ref_text or "").strip() or _read_reference_text_sidecar(history_wav)
@@ -2670,6 +2729,14 @@ def create_demo_interface(demo: VoxCPMDemo):
                             placeholder="例: 低めの男性ナレーション / やさしい女性の声 / 元気なキャラクター声",
                             lines=3,
                         )
+                        with gr.Group(visible=False) as design_irodori_lora_group:
+                            design_irodori_lora = gr.Dropdown(
+                                choices=_list_irodori_lora_adapters(),
+                                value="",
+                                label="Irodori LoRAアダプタ",
+                                info="学習済みLoRAをIrodori-TTS推論に適用します。",
+                            )
+                            design_irodori_lora_refresh = gr.Button("LoRA一覧を更新", variant="secondary", size="sm")
                         design_intonation = gr.State("")
                         with gr.Group() as design_word_accent_group:
                             design_word_accent = _add_word_accent_controls()
@@ -2746,6 +2813,13 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 label="この声で読み上げるテキスト",
                                 lines=4,
                             )
+                            with gr.Group(visible=False) as design_reuse_irodori_lora_group:
+                                design_reuse_irodori_lora = gr.Dropdown(
+                                    choices=_list_irodori_lora_adapters(),
+                                    value="",
+                                    label="Irodori LoRAアダプタ",
+                                )
+                                design_reuse_irodori_lora_refresh = gr.Button("LoRA一覧を更新", variant="secondary", size="sm")
                             design_reuse_filename = gr.Textbox(
                                 value="",
                                 label="保存ファイル名（任意）",
@@ -2768,6 +2842,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         design_intonation,
                         design_word_accent,
                         design_language,
+                        design_irodori_lora,
                         design_filename,
                         design_cfg,
                         design_normalize,
@@ -2813,6 +2888,22 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[design_history],
                     show_progress=False,
                 )
+                design_irodori_lora_refresh.click(
+                    fn=_lora_adapter_dropdown_update,
+                    inputs=[],
+                    outputs=[design_irodori_lora],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
+                )
+                design_reuse_irodori_lora_refresh.click(
+                    fn=_lora_adapter_dropdown_update,
+                    inputs=[],
+                    outputs=[design_reuse_irodori_lora],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
+                )
                 design_history_delete.click(
                     fn=_delete_voice_design_history_single,
                     inputs=[design_history],
@@ -2828,6 +2919,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         design_history,
                         design_reuse_text,
                         design_language,
+                        design_reuse_irodori_lora,
                         design_reuse_filename,
                         design_cfg,
                         design_normalize,
@@ -2881,6 +2973,13 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 value=[],
                                 label="特徴",
                             )
+                            clone_irodori_lora = gr.Dropdown(
+                                choices=_list_irodori_lora_adapters(),
+                                value="",
+                                label="Irodori LoRAアダプタ",
+                                info="学習済みLoRAをIrodori-TTS推論に適用します。",
+                            )
+                            clone_irodori_lora_refresh = gr.Button("LoRA一覧を更新", variant="secondary", size="sm")
                         clone_language = _language_dropdown()
                         clone_control = gr.Textbox(
                             value="自然で聞き取りやすく、落ち着いた話し方",
@@ -3113,6 +3212,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         clone_history,
                         clone_qwen3_ref_text,
                         clone_language,
+                        clone_irodori_lora,
                         clone_filename,
                         clone_cfg,
                         clone_normalize,
@@ -3205,6 +3305,14 @@ def create_demo_interface(demo: VoxCPMDemo):
                     inputs=[],
                     outputs=[clone_history],
                     show_progress=False,
+                )
+                clone_irodori_lora_refresh.click(
+                    fn=_lora_adapter_dropdown_update,
+                    inputs=[],
+                    outputs=[clone_irodori_lora],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
                 )
                 clone_history_delete.click(
                     fn=_delete_voice_design_history_single,
@@ -3358,6 +3466,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             design_advanced_group,
             design_qwen3_gacha_group,
             clone_irodori_profile_group,
+            design_irodori_lora_group,
+            design_reuse_irodori_lora_group,
             clone_qwen3_ref_text_group,
             clone_qwen3_corpus_group,
             clone_qwen3_corpus_result_group,
