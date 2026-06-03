@@ -919,7 +919,7 @@ class VoxCPMDemo:
             )
         return (
             "VoiceDesignCloner連携（Qwen3-TTS・簡易）を使用します。Voice-Design-ClonerのQwen3-TTSワークフローを参考に、"
-            "多言語の声デザイン、声ガチャ、参照音声+文字起こしによる簡易クローン、"
+            "多言語の声デザイン、生成数指定による複数候補、参照音声+文字起こしによる簡易クローン、"
             "選んだ声での簡易コーパス一括音声化、リサンプル、esd.list生成、Irodori-TTS LoRA学習データ準備、"
             "LoRA学習実行入口に対応しています。Style-Bert-VITS2向けの完全自動配置はまだ統合していません。"
         )
@@ -2188,6 +2188,81 @@ def create_demo_interface(demo: VoxCPMDemo):
             status,
         )
 
+    def _generate_qwen3_design_candidates(
+        engine_label: str,
+        text: str,
+        voice_age: str,
+        voice_gender: str,
+        voice_features: Optional[list[str]],
+        control_instruction: str,
+        intonation_instruction: str,
+        word_accent_instruction: str,
+        target_language: str,
+        filename_hint: str,
+        candidate_count: int,
+    ):
+        if not _engine_is_qwen3(engine_label):
+            raise ValueError("Qwen3-TTSの生成数指定はVoiceDesignCloner連携（Qwen3-TTS・簡易）で利用できます。")
+
+        count = max(1, min(int(candidate_count or 1), 4))
+        control_prompt = _combine_voice_profile_prompt(
+            voice_age,
+            voice_gender,
+            voice_features,
+            control_instruction,
+        )
+        instruct = " ".join(
+            part
+            for part in (
+                control_prompt,
+                _build_intonation_prompt(intonation_instruction),
+                _build_word_accent_prompt(word_accent_instruction),
+            )
+            if part
+        )
+        base_name = _sanitize_filename(filename_hint) or ("single" if count == 1 else "candidates")
+        audio_updates = []
+        file_updates = []
+        generated: list[tuple[Tuple[int, np.ndarray], str]] = []
+
+        for index in range(count):
+            output_hint = base_name if count == 1 else f"{base_name}_{index + 1:02d}"
+            audio, output_path = _generate_qwen3_for_download(
+                mode="design",
+                text=text,
+                prefix="qwen3_design" if count == 1 else "qwen3_candidate",
+                filename_hint=output_hint,
+                target_language=target_language,
+                instruct=instruct,
+            )
+            generated.append((audio, output_path))
+
+        for index in range(4):
+            if count > 1 and index < len(generated):
+                audio, output_path = generated[index]
+                audio_updates.append(gr.update(value=audio, visible=True))
+                file_updates.append(gr.update(value=output_path, visible=True))
+            else:
+                audio_updates.append(gr.update(value=None, visible=False))
+                file_updates.append(gr.update(value=None, visible=False))
+
+        main_audio, main_path = generated[0]
+        if count == 1:
+            status = "1件生成しました。生成されたWAVは履歴から再利用できます。"
+        else:
+            status = (
+                f"{count}件の候補を生成しました。上の「生成された音声」には候補1を表示しています。"
+                "気に入った候補はWAVを確認し、履歴から別セリフ生成や声のクローンに使えます。"
+            )
+        return (
+            main_audio,
+            main_path,
+            *audio_updates,
+            *file_updates,
+            gr.update(choices=_list_voice_design_history(), value=main_path),
+            status,
+        )
+
     def _refresh_voice_design_history():
         return _history_dropdown_update()
 
@@ -2800,27 +2875,26 @@ def create_demo_interface(demo: VoxCPMDemo):
                         design_btn = gr.Button("この声を生成", variant="primary", size="lg")
                         with gr.Group(visible=False) as design_qwen3_single_group:
                             gr.Markdown(
-                                "**単発生成**\n\n"
-                                "声の指示からQwen3-TTSで候補を1つだけ生成します。"
-                                "下の声ガチャは、同じ処理を複数回まわして候補を比べる機能です。"
+                                "**Qwen3-TTS 生成**\n\n"
+                                "左カラムの声の指示・読み上げテキスト・発話言語を使って生成します。"
+                                "生成数を1にすると単発生成、2以上にすると複数候補の比較になります。"
                             )
-                            design_qwen3_single_btn = gr.Button("1つだけ生成（単発）", variant="primary", size="lg")
+                            design_qwen3_count = gr.Dropdown(
+                                choices=[1, 2, 3, 4],
+                                value=1,
+                                label="生成数",
+                                info="候補を増やすほど生成時間とVRAM使用時間が増えます。",
+                            )
+                            design_qwen3_generate_btn = gr.Button("指定数を生成", variant="primary", size="lg")
                     with gr.Column():
                         design_output = gr.Audio(label="生成された音声")
                         design_file = gr.File(label="WAVダウンロード", interactive=False)
                         with gr.Group(visible=False) as design_qwen3_gacha_group:
-                            with gr.Accordion("声ガチャ（複数候補）", open=True):
+                            with gr.Accordion("生成候補", open=True):
                                 gr.Markdown(
-                                    "単発生成と同じQwen3-TTSの声デザイン処理を複数回実行します。"
-                                    "気に入った候補はWAVとして保存され、履歴から再利用できます。"
+                                    "生成数を2以上にした場合、候補がここに並びます。"
+                                    "生成数が1の場合は上の「生成された音声」だけを使います。"
                                 )
-                                design_gacha_count = gr.Dropdown(
-                                    choices=[2, 3, 4],
-                                    value=3,
-                                    label="候補数",
-                                    info="候補を増やすほど生成時間とVRAM使用時間が増えます。",
-                                )
-                                design_gacha_btn = gr.Button("声ガチャ生成", variant="primary")
                                 design_gacha_status = gr.Markdown("")
                                 design_gacha_audio_1 = gr.Audio(label="候補 1", visible=False)
                                 design_gacha_file_1 = gr.File(label="候補 1 WAV", interactive=False, visible=False)
@@ -2899,31 +2973,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                     show_progress=True,
                     api_name="design",
                 )
-                design_qwen3_single_btn.click(
-                    fn=_generate_design,
-                    inputs=[
-                        engine_selector,
-                        design_text,
-                        design_voice_age,
-                        design_voice_gender,
-                        design_voice_features,
-                        design_control,
-                        design_intonation,
-                        design_word_accent,
-                        design_language,
-                        design_irodori_lora,
-                        design_filename,
-                        design_cfg,
-                        design_normalize,
-                        design_steps,
-                    ],
-                    outputs=[design_output, design_file, design_history],
-                    show_progress=True,
-                    api_name=None,
-                    api_visibility="private",
-                )
-                design_gacha_btn.click(
-                    fn=_generate_voice_gacha,
+                design_qwen3_generate_btn.click(
+                    fn=_generate_qwen3_design_candidates,
                     inputs=[
                         engine_selector,
                         design_text,
@@ -2935,9 +2986,11 @@ def create_demo_interface(demo: VoxCPMDemo):
                         design_word_accent,
                         design_language,
                         design_filename,
-                        design_gacha_count,
+                        design_qwen3_count,
                     ],
                     outputs=[
+                        design_output,
+                        design_file,
                         design_gacha_audio_1,
                         design_gacha_audio_2,
                         design_gacha_audio_3,
@@ -2950,7 +3003,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         design_gacha_status,
                     ],
                     show_progress=True,
-                    api_name="voice_gacha",
+                    api_name="qwen3_design_candidates",
                 )
                 design_history_refresh.click(
                     fn=_refresh_voice_design_history,
