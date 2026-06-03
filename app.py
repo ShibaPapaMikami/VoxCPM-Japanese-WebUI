@@ -1486,7 +1486,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         )
         if skipped:
             status += f"\n\n本文が見つからずスキップ: {len(skipped)}件"
-        return status, str(dest_dir), str(lab_text_path), str(jsonl_path)
+        return status, str(dest_dir), str(dest_dir), str(lab_text_path), str(jsonl_path)
 
     def _resolve_lora_lab_dir(lab_dir_path: str) -> Path:
         if not (lab_dir_path or "").strip():
@@ -1588,6 +1588,43 @@ def create_demo_interface(demo: VoxCPMDemo):
         choices = _list_irodori_lora_adapters()
         value = choices[0][1] if choices else ""
         return gr.update(choices=choices, value=value)
+
+    def _lora_adapter_summary() -> str:
+        lora_root = _output_dir(create=False) / "lora"
+        if not lora_root.is_dir():
+            return f"学習済みLoRAアダプタはまだありません。\n保存先: {lora_root}"
+
+        rows = []
+        for speaker_dir in sorted((p for p in lora_root.iterdir() if p.is_dir()), key=lambda p: p.name.lower()):
+            adapter_dir = _resolve_lora_adapter_dir(speaker_dir)
+            if adapter_dir is None:
+                rows.append(f"- {speaker_dir.name}: アダプタ未検出")
+                continue
+            weights = adapter_dir / "adapter_model.safetensors"
+            if not weights.is_file():
+                weights = adapter_dir / "adapter_model.bin"
+            size_mb = weights.stat().st_size / (1024 * 1024) if weights.is_file() else 0.0
+            updated = datetime.fromtimestamp(adapter_dir.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+            rows.append(f"- {speaker_dir.name}: {adapter_dir.name} / {size_mb:.1f} MB / 更新 {updated}\n  {adapter_dir}")
+
+        if not rows:
+            return f"学習済みLoRAアダプタはまだありません。\n保存先: {lora_root}"
+        return "学習済みLoRAアダプタ一覧\n\n" + "\n".join(rows) + f"\n\n保存先: {lora_root}"
+
+    def _refresh_lora_adapter_management():
+        choices = _list_irodori_lora_adapters()
+        value = choices[0][1] if choices else ""
+        return (
+            gr.update(choices=choices, value=value),
+            gr.update(choices=choices, value=value),
+            gr.update(choices=choices, value=value),
+            _lora_adapter_summary(),
+        )
+
+    def _open_lora_root():
+        lora_root = _output_dir() / "lora"
+        lora_root.mkdir(parents=True, exist_ok=True)
+        return _open_existing_folder(str(lora_root))
 
     def _run_subprocess_lines(command: list[str], cwd: Path):
         process = subprocess.Popen(
@@ -3190,6 +3227,15 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 interactive=False,
                                 lines=12,
                             )
+                            with gr.Row():
+                                clone_lora_adapter_refresh = gr.Button("LoRAアダプタ一覧を更新", variant="secondary")
+                                clone_lora_adapter_open_dir = gr.Button("LoRA保存フォルダを開く", variant="secondary")
+                            clone_lora_adapter_status = gr.Textbox(
+                                value=_lora_adapter_summary(),
+                                label="学習済みLoRAアダプタ一覧",
+                                interactive=False,
+                                lines=7,
+                            )
                         gr.Markdown(
                             "**使い方**\n\n"
                             "1. クローンしたい声の音声をアップロードするか、声のデザイン履歴から選びます。\n"
@@ -3274,6 +3320,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[
                         clone_lora_prepare_status,
                         clone_lora_lab_dir,
+                        clone_lora_train_lab_dir,
                         clone_lora_lab_text_file,
                         clone_lora_jsonl_file,
                     ],
@@ -3294,9 +3341,43 @@ def create_demo_interface(demo: VoxCPMDemo):
                     show_progress=True,
                     api_name="qwen3_run_irodori_lora_training",
                 )
+                lora_train_event.then(
+                    fn=_refresh_lora_adapter_management,
+                    inputs=[],
+                    outputs=[
+                        design_irodori_lora,
+                        design_reuse_irodori_lora,
+                        clone_irodori_lora,
+                        clone_lora_adapter_status,
+                    ],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
+                )
                 clone_lora_train_stop_btn.click(
                     fn=None,
                     cancels=[lora_train_event],
+                    api_name=None,
+                    api_visibility="private",
+                )
+                clone_lora_adapter_refresh.click(
+                    fn=_refresh_lora_adapter_management,
+                    inputs=[],
+                    outputs=[
+                        design_irodori_lora,
+                        design_reuse_irodori_lora,
+                        clone_irodori_lora,
+                        clone_lora_adapter_status,
+                    ],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
+                )
+                clone_lora_adapter_open_dir.click(
+                    fn=_open_lora_root,
+                    inputs=[],
+                    outputs=[clone_lora_adapter_status],
+                    show_progress=False,
                     api_name=None,
                     api_visibility="private",
                 )
