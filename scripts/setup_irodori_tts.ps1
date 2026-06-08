@@ -44,11 +44,27 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 if (-not $SkipSync) {
     Push-Location $InstallDir
     try {
-        uv sync --extra cu128
+        $VenvDir = Join-Path $InstallDir ".venv"
+        $VenvPython = if ($IsWindows -or $env:OS -eq "Windows_NT") {
+            Join-Path $VenvDir "Scripts\python.exe"
+        }
+        else {
+            Join-Path $VenvDir "bin/python"
+        }
+
+        if (Test-Path $VenvPython) {
+            & $VenvPython -c "import sys; print(sys.executable)" *> $null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "Existing Irodori-TTS .venv is broken. Recreating it..."
+                Remove-Item -LiteralPath $VenvDir -Recurse -Force
+            }
+        }
+
+        uv --native-tls sync --extra cu128
         if ($LASTEXITCODE -ne 0) {
             throw "uv sync failed."
         }
-        uv pip install truststore
+        uv --native-tls pip install truststore
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to install truststore into the Irodori-TTS environment."
         }

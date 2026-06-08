@@ -10,6 +10,18 @@ sys.path.insert(0, os.getcwd())
 
 import torch  # noqa: E402
 
+
+def _inject_windows_truststore() -> None:
+    try:
+        import truststore
+
+        truststore.inject_into_ssl()
+    except Exception:
+        pass
+
+
+_inject_windows_truststore()
+
 from irodori_tts.codec import DACVAECodec  # noqa: E402
 
 
@@ -73,7 +85,7 @@ def main() -> int:
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
 
     entries = []
-    with input_path.open(encoding="utf-8") as f:
+    with input_path.open(encoding="utf-8-sig") as f:
         for line in f:
             line = line.strip()
             if line:

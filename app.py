@@ -812,6 +812,29 @@ class VoxCPMDemo:
     def irodori_project_dir(self) -> Path:
         return Path.cwd() / "external" / "Irodori-TTS"
 
+    @staticmethod
+    def _python_executable_works(path: Path) -> bool:
+        try:
+            result = subprocess.run(
+                [str(path), "-c", "import sys; print(sys.executable)"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def irodori_python_path(self) -> Path:
+        project_dir = self.irodori_project_dir()
+        if sys.platform.startswith("win"):
+            candidate = project_dir / ".venv" / "Scripts" / "python.exe"
+        else:
+            candidate = project_dir / ".venv" / "bin" / "python"
+        if candidate.exists() and self._python_executable_works(candidate):
+            return candidate
+        return Path(sys.executable)
+
     def irodori_status(self) -> str:
         project_dir = self.irodori_project_dir()
         if not project_dir.exists():
@@ -846,16 +869,12 @@ class VoxCPMDemo:
                 "Irodori-TTSがまだセットアップされていません。"
                 "PowerShellで `scripts\\setup_irodori_tts.ps1` を実行してから、もう一度試してください。"
             )
-        uv_path = shutil.which("uv")
-        if uv_path is None:
-            raise RuntimeError("`uv` コマンドが見つかりません。Irodori-TTSのセットアップ手順でuvを導入してください。")
+        python_path = self.irodori_python_path()
 
         output_path = Path(output_wav_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         command = [
-            uv_path,
-            "run",
-            "python",
+            str(python_path),
             str(Path.cwd() / "scripts" / "run_irodori_infer.py"),
             "--hf-checkpoint",
             "Aratako/Irodori-TTS-500M-v3",
@@ -1532,10 +1551,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         return speaker, emotion, jsonl_path
 
     def _irodori_python_path() -> Path:
-        project_dir = demo.irodori_project_dir()
-        if sys.platform.startswith("win"):
-            return project_dir / ".venv" / "Scripts" / "python.exe"
-        return project_dir / ".venv" / "bin" / "python"
+        return demo.irodori_python_path()
 
     def _lora_training_paths(speaker: str) -> tuple[Path, Path, Path]:
         base_dir = _output_dir() / "lora_data"
@@ -1672,7 +1688,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             irodori_root = demo.irodori_project_dir()
             irodori_python = _irodori_python_path()
             encode_script = Path.cwd() / "scripts" / "encode_irodori_latents.py"
-            train_script = irodori_root / "train.py"
+            train_script = Path.cwd() / "scripts" / "run_irodori_train.py"
             train_config = irodori_root / "configs" / "train_500m_v3_lora.yaml"
             latent_dir, manifest_path, output_dir = _lora_training_paths(speaker)
             max_steps_i = max(1, int(max_steps or 50))
@@ -1698,6 +1714,11 @@ def create_demo_interface(demo: VoxCPMDemo):
                 str(irodori_python),
                 "-c",
                 (
+                    "try:\n"
+                    "    import truststore\n"
+                    "    truststore.inject_into_ssl()\n"
+                    "except Exception:\n"
+                    "    pass\n"
                     "from huggingface_hub import hf_hub_download; "
                     "print(hf_hub_download('Aratako/Irodori-TTS-500M-v3', 'model.safetensors'))"
                 ),
