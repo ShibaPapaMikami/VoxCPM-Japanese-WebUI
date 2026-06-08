@@ -1550,6 +1550,129 @@ def create_demo_interface(demo: VoxCPMDemo):
         jsonl_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
         return speaker, emotion, jsonl_path
 
+    def _check_irodori_lora_lab_data(lab_dir_path: str) -> str:
+        lab_dir = _resolve_lora_lab_dir(lab_dir_path)
+        speaker = _sanitize_filename(lab_dir.parent.name) or "speaker"
+        emotion = _sanitize_filename(lab_dir.name) or "Neutral"
+        text_file = lab_dir / f"{emotion}.txt"
+        wav_dir = lab_dir / "wavs"
+        if not text_file.is_file():
+            raise ValueError(f"labテキストが見つかりません: {text_file}")
+        if not wav_dir.is_dir():
+            raise ValueError(f"wavsフォルダが見つかりません: {wav_dir}")
+
+        text_entries: dict[str, str] = {}
+        malformed_lines = 0
+        empty_text_lines = 0
+        for line in text_file.read_text(encoding="utf-8-sig").splitlines():
+            clean = line.strip()
+            if not clean:
+                continue
+            if ":" not in clean:
+                malformed_lines += 1
+                continue
+            file_id, text = clean.split(":", 1)
+            stem = Path(file_id.strip()).stem
+            body = text.strip()
+            if not stem or not body:
+                empty_text_lines += 1
+                continue
+            text_entries[stem] = body
+
+        wav_files = sorted(wav_dir.glob("*.wav"))
+        wav_by_stem = {path.stem: path for path in wav_files}
+        matched = sorted(stem for stem in text_entries if stem in wav_by_stem)
+        missing_wavs = sorted(stem for stem in text_entries if stem not in wav_by_stem)
+        extra_wavs = sorted(stem for stem in wav_by_stem if stem not in text_entries)
+
+        durations: list[float] = []
+        sample_rates: dict[int, int] = {}
+        channels: dict[int, int] = {}
+        subtypes: dict[str, int] = {}
+        short_files: list[str] = []
+        long_files: list[str] = []
+        unreadable_files: list[str] = []
+        for stem in matched:
+            wav_path = wav_by_stem[stem]
+            try:
+                import soundfile as sf
+
+                info = sf.info(str(wav_path))
+                duration = float(info.frames) / float(info.samplerate) if info.samplerate else 0.0
+                durations.append(duration)
+                sample_rates[int(info.samplerate)] = sample_rates.get(int(info.samplerate), 0) + 1
+                channels[int(info.channels)] = channels.get(int(info.channels), 0) + 1
+                subtype = str(info.subtype or "unknown")
+                subtypes[subtype] = subtypes.get(subtype, 0) + 1
+                if duration < 0.7:
+                    short_files.append(wav_path.name)
+                if duration > 30.0:
+                    long_files.append(wav_path.name)
+            except Exception:
+                unreadable_files.append(wav_path.name)
+
+        warnings: list[str] = []
+        if len(matched) < 10:
+            warnings.append("学習データが10件未満です。動作確認はできますが、声質学習にはかなり少なめです。")
+        elif len(matched) < 50:
+            warnings.append("声質として使うには少なめです。まず動作確認し、可能なら50件以上へ増やしてください。")
+        if missing_wavs:
+            warnings.append(f"テキストはあるがWAVがない項目があります: {len(missing_wavs)}件")
+        if extra_wavs:
+            warnings.append(f"WAVはあるがテキストにない項目があります: {len(extra_wavs)}件")
+        if malformed_lines or empty_text_lines:
+            warnings.append(f"読み取れない行があります: 形式不正 {malformed_lines}件 / 空テキスト {empty_text_lines}件")
+        if short_files:
+            warnings.append(f"0.7秒未満の短いWAVがあります: {len(short_files)}件")
+        if long_files:
+            warnings.append(f"30秒を超える長いWAVがあります: {len(long_files)}件")
+        if unreadable_files:
+            warnings.append(f"読み込めないWAVがあります: {len(unreadable_files)}件")
+        if any(ch != 1 for ch in channels):
+            warnings.append("モノラル以外のWAVがあります。可能ならリサンプルで mono / PCM_16 に整えてください。")
+
+        total_sec = sum(durations)
+        avg_sec = (total_sec / len(durations)) if durations else 0.0
+        min_sec = min(durations) if durations else 0.0
+        max_sec = max(durations) if durations else 0.0
+        status = "OK" if not warnings else "確認してください"
+        lines = [
+            f"品質チェック: {status}",
+            "",
+            f"- 話者: {speaker}",
+            f"- 感情: {emotion}",
+            f"- lab: {lab_dir}",
+            f"- 対応済みデータ: {len(matched)}件",
+            f"- テキスト行: {len(text_entries)}件",
+            f"- WAV: {len(wav_files)}件",
+            f"- 合計時間: {total_sec:.1f}秒",
+            f"- 長さ: 平均 {avg_sec:.2f}秒 / 最短 {min_sec:.2f}秒 / 最長 {max_sec:.2f}秒",
+            f"- サンプルレート: {', '.join(f'{sr}Hz x{count}' for sr, count in sorted(sample_rates.items())) or '未確認'}",
+            f"- チャンネル: {', '.join(f'{ch}ch x{count}' for ch, count in sorted(channels.items())) or '未確認'}",
+            f"- 形式: {', '.join(f'{name} x{count}' for name, count in sorted(subtypes.items())) or '未確認'}",
+        ]
+        if warnings:
+            lines.extend(["", "注意:", *[f"- {warning}" for warning in warnings]])
+        else:
+            lines.extend(["", "このままドライランへ進めます。実学習は短いステップ数から試してください。"])
+
+        def sample(names: list[str]) -> str:
+            head = names[:5]
+            suffix = "" if len(names) <= 5 else f" ほか{len(names) - 5}件"
+            return ", ".join(head) + suffix
+
+        details = [
+            ("WAV不足", missing_wavs),
+            ("テキストなしWAV", extra_wavs),
+            ("短すぎるWAV", short_files),
+            ("長すぎるWAV", long_files),
+            ("読み込み不可WAV", unreadable_files),
+        ]
+        for label, names in details:
+            if names:
+                lines.append(f"{label}: {sample(names)}")
+        return "\n".join(lines)
+
     def _irodori_python_path() -> Path:
         return demo.irodori_python_path()
 
@@ -3304,6 +3427,13 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 placeholder="例: D:\\AIProduct\\VoxCPM\\outputs\\lora_data\\lab\\honoka\\Neutral",
                                 interactive=True,
                             )
+                            clone_lora_quality_btn = gr.Button("学習データをチェック", variant="secondary")
+                            clone_lora_quality_status = gr.Textbox(
+                                value="",
+                                label="学習データ品質チェック",
+                                interactive=False,
+                                lines=12,
+                            )
                             with gr.Row():
                                 clone_lora_train_steps = gr.Number(
                                     value=50,
@@ -3447,6 +3577,13 @@ def create_demo_interface(demo: VoxCPMDemo):
                     ],
                     show_progress=True,
                     api_name="qwen3_prepare_irodori_lora_data",
+                )
+                clone_lora_quality_btn.click(
+                    fn=_check_irodori_lora_lab_data,
+                    inputs=[clone_lora_train_lab_dir],
+                    outputs=[clone_lora_quality_status],
+                    show_progress=True,
+                    api_name="qwen3_check_irodori_lora_data",
                 )
                 lora_train_event = clone_lora_train_btn.click(
                     fn=_run_irodori_lora_training,
