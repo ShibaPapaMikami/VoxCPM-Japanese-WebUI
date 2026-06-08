@@ -3249,6 +3249,15 @@ def create_demo_interface(demo: VoxCPMDemo):
                             )
                             clone_corpus_esd_file = gr.File(label="esd.list", interactive=False)
                             gr.Markdown(
+                                "**Irodori LoRA学習の流れ**\n\n"
+                                "1. コーパスを生成し、必要なら `resampled` へ変換します。\n"
+                                "2. `LoRA学習データを準備` で lab フォルダを作成します。\n"
+                                "3. まずドライランでコマンドとパスを確認します。\n"
+                                "4. 問題なければドライランを外し、短いステップ数から実学習します。\n"
+                                "5. 学習後は Irodori-TTS を選び、声のデザインまたは声のクローンで LoRA アダプタを選びます。\n\n"
+                                "テストは10文前後でも動作確認できます。声質として使う場合は、静かな音声で50文以上、できれば数百文あると安定しやすくなります。"
+                            )
+                            gr.Markdown(
                                 "**Irodori-TTS LoRA学習データ準備**\n\n"
                                 "生成済みコーパスをIrodori-TTSのLoRA学習で使う `lab/{話者}/{感情}` 形式へ変換します。"
                             )
@@ -3271,7 +3280,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 label="学習に使うWAVフォルダ",
                                 info="resampledを使う場合は、先にリサンプルを実行してください。",
                             )
-                            clone_lora_prepare_btn = gr.Button("LoRA学習データを準備", variant="secondary")
+                            clone_lora_prepare_btn = gr.Button("1. LoRA学習データを準備", variant="secondary")
                             clone_lora_prepare_status = gr.Textbox(
                                 value="",
                                 label="LoRA学習データ準備結果",
@@ -3287,7 +3296,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                             clone_lora_jsonl_file = gr.File(label="training JSONL", interactive=False)
                             gr.Markdown(
                                 "**LoRA学習実行（実験）**\n\n"
-                                "既定ではドライランです。実学習を行う場合はドライランを外してください。"
+                                "既定ではドライランです。ドライランでは学習せず、実行されるコマンドだけを確認します。実学習はGPUを使うため、まず少ないステップ数で試してください。"
                             )
                             clone_lora_train_lab_dir = gr.Textbox(
                                 value="",
@@ -3299,28 +3308,33 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 clone_lora_train_steps = gr.Number(
                                     value=50,
                                     label="学習ステップ数",
+                                    info="動作確認は1〜50、本格調整は音声量を増やしてから段階的に上げます。",
                                     precision=0,
                                 )
                                 clone_lora_train_batch = gr.Number(
                                     value=1,
                                     label="バッチサイズ",
+                                    info="VRAM不足時は1のままにしてください。",
                                     precision=0,
                                 )
                                 clone_lora_train_workers = gr.Number(
                                     value=0,
                                     label="ワーカー数",
+                                    info="Windowsでは0が安定しやすいです。",
                                     precision=0,
                                 )
                             clone_lora_train_lr = gr.Number(
                                 value=0.0001,
                                 label="学習率",
+                                info="迷ったら既定値のままで始めてください。",
                             )
                             clone_lora_train_dry_run = gr.Checkbox(
                                 value=True,
-                                label="ドライラン（コマンド確認のみ）",
+                                label="ドライラン（まずはオン推奨）",
+                                info="オンの間は実学習しません。ログでパスを確認してから外します。",
                             )
                             with gr.Row():
-                                clone_lora_train_btn = gr.Button("LoRA学習を開始", variant="primary")
+                                clone_lora_train_btn = gr.Button("2. LoRA学習を開始", variant="primary")
                                 clone_lora_train_stop_btn = gr.Button("停止", variant="stop")
                             clone_lora_train_status = gr.Textbox(
                                 value="",
@@ -3335,7 +3349,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 lines=12,
                             )
                             with gr.Row():
-                                clone_lora_adapter_refresh = gr.Button("LoRAアダプタ一覧を更新", variant="secondary")
+                                clone_lora_adapter_refresh = gr.Button("3. LoRAアダプタ一覧を更新", variant="secondary")
                                 clone_lora_adapter_open_dir = gr.Button("LoRA保存フォルダを開く", variant="secondary")
                             clone_lora_adapter_status = gr.Textbox(
                                 value=_lora_adapter_summary(),
