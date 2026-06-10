@@ -232,20 +232,41 @@ I18N = gr.I18n(**_I18N_TRANSLATIONS)
 DEFAULT_TARGET_TEXT = "こんにちは。VoxCPM2の日本語音声生成テストです。自然で聞き取りやすい音声を生成します。"
 
 _CUSTOM_CSS = """
+:root {
+    --jp-surface: #ffffff;
+    --jp-page: #f6f7f9;
+    --jp-border: #d9e0ea;
+    --jp-border-strong: #c5cfdd;
+    --jp-text: #172033;
+    --jp-muted: #637083;
+    --jp-accent: #2563eb;
+    --jp-accent-soft: #e8f0ff;
+    --jp-warm: #f27a1a;
+}
+body,
+.gradio-container {
+    background: var(--jp-page) !important;
+    color: var(--jp-text);
+}
+.gradio-container {
+    max-width: 1360px !important;
+    padding: 20px 24px 36px !important;
+}
 .logo-container {
-    margin: 0.5rem 0 1rem 0;
-    padding: 1rem 1.25rem;
-    border: 1px solid var(--border-color-primary);
+    margin: 0.25rem 0 1rem 0;
+    padding: 1rem 1.15rem;
+    border: 1px solid var(--jp-border);
     border-radius: 8px;
-    background: var(--block-background-fill);
+    background: var(--jp-surface);
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
     flex-wrap: wrap;
+    box-shadow: 0 1px 2px rgba(18, 25, 38, 0.04);
 }
 .logo-container img {
-    height: 56px;
+    height: 52px;
     width: auto;
     max-width: 200px;
     display: block;
@@ -256,12 +277,12 @@ _CUSTOM_CSS = """
     gap: 0.9rem;
 }
 .text-logo {
-    border: 1px solid #d7dde8;
-    border-left: 6px solid #f27a1a;
+    border: 1px solid var(--jp-border);
+    border-left: 6px solid var(--jp-warm);
     border-radius: 8px;
     padding: 0.55rem 0.8rem;
     background: #fff7ef;
-    color: #1f2937;
+    color: var(--jp-text);
     font-weight: 800;
     letter-spacing: 0;
     line-height: 1.1;
@@ -275,19 +296,120 @@ _CUSTOM_CSS = """
 }
 .brand-copy h1 {
     margin: 0;
-    font-size: 1.65rem;
+    font-size: 1.55rem;
     line-height: 1.2;
 }
 .brand-copy p {
     margin: 0.25rem 0 0 0;
-    color: var(--body-text-color-subdued);
+    color: var(--jp-muted);
 }
 .engine-pill {
     border-radius: 999px;
-    border: 1px solid var(--border-color-primary);
+    border: 1px solid var(--jp-border);
     padding: 0.45rem 0.75rem;
-    color: var(--body-text-color-subdued);
+    color: var(--jp-muted);
+    background: #f8fafc;
     white-space: nowrap;
+    font-weight: 700;
+}
+.gradio-container .tabs {
+    gap: 0.35rem;
+}
+.gradio-container .tab-nav,
+.gradio-container div[role="tablist"] {
+    border-bottom: 1px solid var(--jp-border) !important;
+    gap: 0.25rem !important;
+}
+.gradio-container button[role="tab"] {
+    border-radius: 6px 6px 0 0 !important;
+    padding: 0.65rem 0.9rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0 !important;
+}
+.gradio-container button[role="tab"][aria-selected="true"] {
+    background: var(--jp-surface) !important;
+    color: var(--jp-accent) !important;
+    border-color: var(--jp-border) !important;
+    box-shadow: inset 0 -2px 0 var(--jp-accent);
+}
+.gradio-container .block,
+.gradio-container .form,
+.gradio-container .panel,
+.gradio-container .accordion {
+    border-radius: 8px !important;
+}
+.gradio-container .block {
+    border-color: var(--jp-border) !important;
+}
+.gradio-container label,
+.gradio-container .label-wrap {
+    color: var(--jp-text) !important;
+    font-weight: 700 !important;
+    letter-spacing: 0 !important;
+}
+.gradio-container input,
+.gradio-container textarea,
+.gradio-container select {
+    border-radius: 6px !important;
+    border-color: var(--jp-border) !important;
+    background: #ffffff !important;
+}
+.gradio-container textarea {
+    line-height: 1.6 !important;
+}
+.gradio-container input:focus,
+.gradio-container textarea:focus {
+    border-color: var(--jp-accent) !important;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12) !important;
+}
+.gradio-container button {
+    border-radius: 6px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0 !important;
+}
+.gradio-container button.primary {
+    background: var(--jp-accent) !important;
+    border-color: var(--jp-accent) !important;
+    color: #ffffff !important;
+}
+.gradio-container button.secondary {
+    background: #f8fafc !important;
+    border-color: var(--jp-border-strong) !important;
+    color: var(--jp-text) !important;
+}
+.gradio-container button.stop {
+    border-color: #f2b8b5 !important;
+}
+.gradio-container .info,
+.gradio-container .prose p,
+.gradio-container small {
+    color: var(--jp-muted) !important;
+}
+.gradio-container .prose strong {
+    color: var(--jp-text);
+}
+.gradio-container audio {
+    border-radius: 8px;
+}
+.gradio-container [data-testid="block-info"] {
+    color: var(--jp-muted) !important;
+}
+@media (max-width: 720px) {
+    .gradio-container {
+        padding: 12px 12px 24px !important;
+    }
+    .logo-container {
+        align-items: flex-start;
+    }
+    .app-brand {
+        align-items: flex-start;
+    }
+    .brand-copy h1 {
+        font-size: 1.28rem;
+    }
+    .engine-pill {
+        width: 100%;
+    }
 }
 
 /* Toggle switch style */
