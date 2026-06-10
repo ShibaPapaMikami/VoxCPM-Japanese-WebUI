@@ -33,6 +33,8 @@ powershell -ExecutionPolicy Bypass -File scripts\setup_all_windows.ps1
 http://127.0.0.1:8808/
 ```
 
+セットアップ後の最小確認は [最小スモークテスト手順](./docs/SMOKE_TEST_JA.md) を参照してください。
+
 ## セットアップ診断
 
 セットアップ後に起動できない場合、またはVoxCPM2 / Irodori-TTS / Qwen3-TTS / CUDA / モデルキャッシュ / 8808番ポートの状態をまとめて確認したい場合は、以下を実行します。
