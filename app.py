@@ -947,6 +947,29 @@ class VoxCPMDemo:
         return Path.cwd() / "external" / "Irodori-TTS"
 
     @staticmethod
+    def irodori_setup_message() -> str:
+        return (
+            "Irodori-TTSは未セットアップです。\n"
+            "次に実行: `powershell -ExecutionPolicy Bypass -File scripts\\setup_irodori_tts.ps1`"
+        )
+
+    @staticmethod
+    def qwen3_setup_message() -> str:
+        return (
+            "Qwen3-TTSは未セットアップです。\n"
+            "次に実行: `powershell -ExecutionPolicy Bypass -File scripts\\setup_qwen3_tts.ps1`"
+        )
+
+    @staticmethod
+    def qwen3_package_available() -> bool:
+        try:
+            import importlib.util
+
+            return importlib.util.find_spec("qwen_tts") is not None
+        except Exception:
+            return False
+
+    @staticmethod
     def _python_executable_works(path: Path) -> bool:
         try:
             result = subprocess.run(
@@ -972,11 +995,15 @@ class VoxCPMDemo:
     def irodori_status(self) -> str:
         project_dir = self.irodori_project_dir()
         if not project_dir.exists():
-            return "Irodori-TTSは未セットアップです。`scripts\\setup_irodori_tts.ps1` を実行してください。"
+            return self.irodori_setup_message()
         if not (project_dir / "infer.py").exists():
-            return f"Irodori-TTSの `infer.py` が見つかりません: {project_dir}"
+            return (
+                "Irodori-TTSのファイルが不足しています。\n"
+                f"確認先: `{project_dir}`\n"
+                "次に実行: `powershell -ExecutionPolicy Bypass -File scripts\\setup_irodori_tts.ps1`"
+            )
         if shutil.which("uv") is None:
-            return "`uv` コマンドが見つかりません。Irodori-TTSの実行にはuvが必要です。"
+            return "uvが見つかりません。\n次に実行: `winget install --id Astral-sh.UV`"
         return (
             "Irodori-TTSを使用します。日本語に特化した音声生成・参照音声クローンに対応しています。"
             "多言語発話、VoxCPM2の高精度クローン、自由文による細かな声の指示は未対応です。"
@@ -999,10 +1026,9 @@ class VoxCPMDemo:
         project_dir = self.irodori_project_dir()
         infer_py = project_dir / "infer.py"
         if not infer_py.exists():
-            raise RuntimeError(
-                "Irodori-TTSがまだセットアップされていません。"
-                "PowerShellで `scripts\\setup_irodori_tts.ps1` を実行してから、もう一度試してください。"
-            )
+            raise RuntimeError(self.irodori_setup_message())
+        if shutil.which("uv") is None:
+            raise RuntimeError("uvが見つかりません。\n次に実行: `winget install --id Astral-sh.UV`")
         python_path = self.irodori_python_path()
 
         output_path = Path(output_wav_path)
@@ -1055,21 +1081,14 @@ class VoxCPMDemo:
         return processing_utils.audio_from_file(str(output_path))
 
     def qwen3_status(self) -> str:
-        try:
-            import importlib.util
-
-            has_qwen = importlib.util.find_spec("qwen_tts") is not None
-        except Exception:
-            has_qwen = False
-
         wrapper_path = Path.cwd() / "scripts" / "run_qwen3_tts_infer.py"
         if not wrapper_path.exists():
-            return f"Qwen3-TTS実行ラッパーが見つかりません: {wrapper_path}"
-        if not has_qwen:
             return (
-                "VoiceDesignCloner連携（Qwen3-TTS・簡易）は未セットアップです。PowerShellで "
-                "`scripts\\setup_qwen3_tts.ps1` を実行してください。"
+                "Qwen3-TTS実行ファイルが見つかりません。\n"
+                f"確認先: `{wrapper_path}`"
             )
+        if not self.qwen3_package_available():
+            return self.qwen3_setup_message()
         return (
             "VoiceDesignCloner連携（Qwen3-TTS・簡易）を使用します。"
             "Voice-Design-Cloner本体を組み込むものではなく、Qwen3-TTSワークフローを参考にしたJP Voice Studio内の簡易連携です。"
@@ -1097,7 +1116,9 @@ class VoxCPMDemo:
 
         wrapper_path = Path.cwd() / "scripts" / "run_qwen3_tts_infer.py"
         if not wrapper_path.exists():
-            raise RuntimeError(f"Qwen3-TTS実行ラッパーが見つかりません: {wrapper_path}")
+            raise RuntimeError(f"Qwen3-TTS実行ファイルが見つかりません。\n確認先: `{wrapper_path}`")
+        if not self.qwen3_package_available():
+            raise RuntimeError(self.qwen3_setup_message())
 
         output_path = Path(output_wav_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1165,7 +1186,9 @@ class VoxCPMDemo:
 
         wrapper_path = Path.cwd() / "scripts" / "run_qwen3_tts_infer.py"
         if not wrapper_path.exists():
-            raise RuntimeError(f"Qwen3-TTS実行ラッパーが見つかりません: {wrapper_path}")
+            raise RuntimeError(f"Qwen3-TTS実行ファイルが見つかりません。\n確認先: `{wrapper_path}`")
+        if not self.qwen3_package_available():
+            raise RuntimeError(self.qwen3_setup_message())
 
         output_dir = Path(output_dir_path)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -3182,7 +3205,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 choices=_ENGINE_LABELS,
                 value=_ENGINE_VOXCPM,
                 label="音声エンジン",
-                info="Irodori-TTSは日本語専用の実験対応です。未セットアップ時は案内を表示します。",
+                info="任意エンジンが未セットアップの場合は、次に実行するコマンドを表示します。",
             )
             engine_status = gr.Markdown(_engine_status(_ENGINE_VOXCPM))
 
