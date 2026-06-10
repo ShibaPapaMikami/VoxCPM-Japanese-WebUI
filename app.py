@@ -1059,10 +1059,11 @@ class VoxCPMDemo:
                 "`scripts\\setup_qwen3_tts.ps1` を実行してください。"
             )
         return (
-            "VoiceDesignCloner連携（Qwen3-TTS・簡易）を使用します。Voice-Design-ClonerのQwen3-TTSワークフローを参考に、"
+            "VoiceDesignCloner連携（Qwen3-TTS・簡易）を使用します。"
+            "Voice-Design-Cloner本体を組み込むものではなく、Qwen3-TTSワークフローを参考にしたJP Voice Studio内の簡易連携です。"
             "多言語の声デザイン、生成数指定による複数候補、参照音声+文字起こしによる簡易クローン、"
             "選んだ声での簡易コーパス一括音声化、リサンプル、esd.list生成、Irodori-TTS LoRA学習データ準備、"
-            "LoRA学習実行入口に対応しています。Style-Bert-VITS2向けの完全自動配置はまだ統合していません。"
+            "LoRA学習実行入口に対応しています。Style-Bert-VITS2向けの完全自動配置やVoice-Design-Cloner全機能の移植は未統合です。"
         )
 
     def generate_qwen3_audio(
@@ -3245,7 +3246,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                             gr.Markdown(
                                 "**Qwen3-TTS 生成**\n\n"
                                 "左カラムの声の指示・読み上げテキスト・発話言語を使って生成します。"
-                                "生成数を1にすると単発生成、2以上にすると複数候補の比較になります。"
+                                "生成数を1にすると単発生成、2以上にすると声ガチャとして複数候補を比較できます。\n\n"
+                                "※VoiceDesignCloner連携は、Qwen3-TTSの声デザインをこのWeb UIから使う簡易連携です。"
+                                "Voice-Design-Cloner本体の全機能を組み込むものではありません。"
                             )
                             design_qwen3_count = gr.Dropdown(
                                 choices=[1, 2, 3, 4],
@@ -3501,7 +3504,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                             gr.Markdown(
                                 "**コーパス一括音声化（簡易）**\n\n"
                                 "選択中の参照音声または履歴の声で、1行1文のテキストをまとめてWAV化します。"
-                                "出力は `raw/*.wav` と `Neutral.txt` です。"
+                                "出力は `raw/*.wav` と `Neutral.txt` です。\n\n"
+                                "ここでは学習用素材の入口を作ります。Style-Bert-VITS2向けの完全自動配置や、"
+                                "Voice-Design-Cloner本体と同等の一括ワークフローは未統合です。"
                             )
                             clone_corpus_text = gr.Textbox(
                                 value="今日は新しい音声モデルのテストをしています。\nこの声で複数の文章を読み上げます。\n自然で聞き取りやすい音声を目指します。",
