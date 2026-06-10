@@ -1826,6 +1826,85 @@ def create_demo_interface(demo: VoxCPMDemo):
 
         return sorted(candidates, key=sort_key)[0].parent
 
+    _LORA_STUDIO_METADATA = "jp_voice_studio_metadata.json"
+
+    def _read_lora_studio_metadata(adapter_dir: Path) -> dict:
+        for metadata_path in (adapter_dir / _LORA_STUDIO_METADATA, adapter_dir.parent / _LORA_STUDIO_METADATA):
+            if not metadata_path.is_file():
+                continue
+            try:
+                return json.loads(metadata_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+        return {}
+
+    def _count_jsonl_rows(path: Path) -> int:
+        if not path.is_file():
+            return 0
+        try:
+            return sum(1 for line in path.read_text(encoding="utf-8-sig").splitlines() if line.strip())
+        except Exception:
+            return 0
+
+    def _write_lora_studio_metadata(
+        output_dir: Path,
+        adapter_dir: Path,
+        *,
+        speaker: str,
+        emotion: str,
+        lab_dir: Path,
+        jsonl_path: Path,
+        manifest_path: Path,
+        init_checkpoint: str,
+        max_steps: int,
+        batch_size: int,
+        num_workers: int,
+        learning_rate: float,
+    ) -> None:
+        metadata = {
+            "schema_version": 1,
+            "display_name": speaker,
+            "note": "",
+            "engine": "Irodori-TTS",
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "speaker": speaker,
+            "emotion": emotion,
+            "sample_count": _count_jsonl_rows(jsonl_path),
+            "manifest_count": _count_jsonl_rows(manifest_path),
+            "max_steps": max_steps,
+            "batch_size": batch_size,
+            "num_workers": num_workers,
+            "learning_rate": learning_rate,
+            "lab_dir": str(lab_dir),
+            "jsonl_path": str(jsonl_path),
+            "manifest_path": str(manifest_path),
+            "output_dir": str(output_dir),
+            "adapter_dir": str(adapter_dir),
+            "base_checkpoint": init_checkpoint,
+        }
+        for target in (output_dir / _LORA_STUDIO_METADATA, adapter_dir / _LORA_STUDIO_METADATA):
+            try:
+                target.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception as e:
+                logger.warning("Failed to write LoRA metadata %s: %s", target, e)
+
+    def _lora_adapter_label(speaker_dir: Path, adapter_dir: Path) -> str:
+        metadata = _read_lora_studio_metadata(adapter_dir)
+        display_name = (metadata.get("display_name") or speaker_dir.name).strip()
+        sample_count = metadata.get("sample_count")
+        max_steps = metadata.get("max_steps")
+        parts = [display_name, adapter_dir.name]
+        if sample_count:
+            parts.append(f"{sample_count}件")
+        if max_steps:
+            parts.append(f"{max_steps}step")
+        try:
+            updated = datetime.fromtimestamp(adapter_dir.stat().st_mtime).strftime("%m/%d %H:%M")
+        except OSError:
+            updated = ""
+        label = " - ".join(str(part) for part in parts if str(part))
+        return f"{label} ({updated})" if updated else label
+
     def _list_irodori_lora_adapters() -> list[tuple[str, str]]:
         lora_root = _output_dir(create=False) / "lora"
         choices: list[tuple[str, str]] = [("使用しない", "")]
@@ -1835,14 +1914,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             adapter_dir = _resolve_lora_adapter_dir(speaker_dir)
             if adapter_dir is None:
                 continue
-            try:
-                updated = datetime.fromtimestamp(adapter_dir.stat().st_mtime).strftime("%m/%d %H:%M")
-            except OSError:
-                updated = ""
-            label = f"{speaker_dir.name} - {adapter_dir.name}"
-            if updated:
-                label = f"{label} ({updated})"
-            choices.append((label, str(adapter_dir)))
+            choices.append((_lora_adapter_label(speaker_dir, adapter_dir), str(adapter_dir)))
         return choices
 
     def _lora_adapter_dropdown_update():
@@ -1866,7 +1938,21 @@ def create_demo_interface(demo: VoxCPMDemo):
                 weights = adapter_dir / "adapter_model.bin"
             size_mb = weights.stat().st_size / (1024 * 1024) if weights.is_file() else 0.0
             updated = datetime.fromtimestamp(adapter_dir.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-            rows.append(f"- {speaker_dir.name}: {adapter_dir.name} / {size_mb:.1f} MB / 更新 {updated}\n  {adapter_dir}")
+            metadata = _read_lora_studio_metadata(adapter_dir)
+            display_name = (metadata.get("display_name") or speaker_dir.name).strip()
+            sample_count = metadata.get("sample_count")
+            sample_text = f"{sample_count}件" if isinstance(sample_count, int) and sample_count > 0 else "不明"
+            max_steps = metadata.get("max_steps") or "不明"
+            lr_value = metadata.get("learning_rate")
+            lr_text = f"{float(lr_value):.2g}" if isinstance(lr_value, (int, float)) else "不明"
+            created_at = metadata.get("created_at") or "不明"
+            note = (metadata.get("note") or "").strip()
+            note_text = f"\n  メモ: {note}" if note else ""
+            rows.append(
+                f"- {display_name}: {adapter_dir.name} / {size_mb:.1f} MB / 更新 {updated}\n"
+                f"  データ: {sample_text} / steps: {max_steps} / lr: {lr_text} / 作成: {created_at}{note_text}\n"
+                f"  {adapter_dir}"
+            )
 
         if not rows:
             return f"学習済みLoRAアダプタはまだありません。\n保存先: {lora_root}"
@@ -2023,6 +2109,22 @@ def create_demo_interface(demo: VoxCPMDemo):
             for line in _run_subprocess_lines(train_command, irodori_root):
                 logs.append(line)
                 yield emit("LoRA学習中...")
+            adapter_dir = _resolve_lora_adapter_dir(output_dir) or output_dir
+            _write_lora_studio_metadata(
+                output_dir,
+                adapter_dir,
+                speaker=speaker,
+                emotion=emotion,
+                lab_dir=lab_dir,
+                jsonl_path=jsonl_path,
+                manifest_path=manifest_path,
+                init_checkpoint=init_checkpoint,
+                max_steps=max_steps_i,
+                batch_size=batch_i,
+                num_workers=workers_i,
+                learning_rate=lr_value,
+            )
+            logs.append(f"[メタ情報] {adapter_dir / _LORA_STUDIO_METADATA}")
             yield emit(f"LoRA学習が完了しました。出力先: {output_dir}")
         except Exception as e:
             logs.append(f"ERROR: {e}")
