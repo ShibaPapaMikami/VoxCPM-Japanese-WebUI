@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: セットアップ手順
+    url: https://github.com/ShibaPapaMikami/VoxCPM-Japanese-WebUI/blob/main/README_SETUP_JA.md
+    about: Windowsでの導入手順と任意エンジンの追加方法です。
+  - name: 残作業ロードマップ
+    url: https://github.com/ShibaPapaMikami/VoxCPM-Japanese-WebUI/blob/main/docs/ROADMAP_JA.md
+    about: 今後の改善予定と未統合項目です。

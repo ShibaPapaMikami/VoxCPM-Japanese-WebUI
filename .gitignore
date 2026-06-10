@@ -1,6 +1,8 @@
 launch.json
 .venv/
+.venv*/
 __pycache__
+*.pyc
 voxcpm.egg-info
 .DS_Store
 pretrained_models/
@@ -8,7 +10,18 @@ outputs/
 external/
 app_local.py
 .uv-cache/
+uv-cache-*/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.gradio/
+.env
+.env.*
+!.env.example
 .codex-gitconfig
 .jpvoxcpm_settings.json
 *.log
+*.tmp
+tmp/
+_tmp*
 VoxCPM_WebUI.exe
