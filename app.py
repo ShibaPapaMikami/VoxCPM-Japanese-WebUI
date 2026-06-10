@@ -269,7 +269,19 @@ body,
     height: 52px;
     width: auto;
     max-width: 200px;
+    object-fit: contain;
     display: block;
+}
+.logo-container img.engine-logo--voxcpm {
+    max-width: 200px;
+}
+.logo-container img.engine-logo--irodori {
+    height: 58px;
+    max-width: min(260px, 58vw);
+}
+.logo-container img.engine-logo--vdc {
+    height: 52px;
+    max-width: min(185px, 48vw);
 }
 .app-brand {
     display: flex;
@@ -2331,13 +2343,22 @@ def create_demo_interface(demo: VoxCPMDemo):
 
     def _app_header_html(engine_label: str):
         if _engine_is_irodori(engine_label):
-            logo_html = '<div class="text-logo">Irodori-TTS<span>日本語TTS</span></div>'
+            logo_html = (
+                '<img class="engine-logo--irodori" '
+                'src="/gradio_api/file=assets/irodoritts_logo.png" alt="Irodori-TTS Logo">'
+            )
             engine_label_text = "Irodori-TTS"
         elif _engine_is_qwen3(engine_label):
-            logo_html = '<div class="text-logo">VDC<span>Qwen3-TTS 簡易連携</span></div>'
+            logo_html = (
+                '<img class="engine-logo--vdc" '
+                'src="/gradio_api/file=assets/VDcloner_logo.png" alt="VoiceDesignCloner Logo">'
+            )
             engine_label_text = "VoiceDesignCloner連携"
         else:
-            logo_html = '<img src="/gradio_api/file=assets/voxcpm_logo.png" alt="VoxCPM2 Logo">'
+            logo_html = (
+                '<img class="engine-logo--voxcpm" '
+                'src="/gradio_api/file=assets/voxcpm_logo.png" alt="VoxCPM2 Logo">'
+            )
             engine_label_text = "VoxCPM2"
         return (
             '<div class="logo-container">'
