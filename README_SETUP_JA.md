@@ -33,6 +33,22 @@ powershell -ExecutionPolicy Bypass -File scripts\setup_all_windows.ps1
 http://127.0.0.1:8808/
 ```
 
+## セットアップ診断
+
+セットアップ後に起動できない場合、またはVoxCPM2 / Irodori-TTS / Qwen3-TTS / CUDA / モデルキャッシュ / 8808番ポートの状態をまとめて確認したい場合は、以下を実行します。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\check_setup.ps1
+```
+
+LAN公開で使う場合は、ホストとポートも指定できます。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\check_setup.ps1 -HostAddress 0.0.0.0 -Port 8808
+```
+
+結果は `PASS` / `WARN` / `FAIL` で表示されます。`FAIL` がある場合は表示された `fix:` の手順を実行してください。`WARN` は動作可能な場合もありますが、必要に応じて修復してください。
+
 同じLAN内の別端末から使う場合は、起動PCのIPアドレスを使います。
 
 ```powershell

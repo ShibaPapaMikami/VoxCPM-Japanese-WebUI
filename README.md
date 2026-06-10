@@ -62,6 +62,20 @@ powershell -ExecutionPolicy Bypass -File scripts\setup_all_windows.ps1
 http://127.0.0.1:8808/
 ```
 
+### セットアップ診断
+
+起動できない、任意エンジンが使えない、CUDAが有効か分からない場合は、診断スクリプトを実行します。VoxCPM2、CUDA、Irodori-TTS、Qwen3-TTS、モデルキャッシュ、8808番ポートをまとめて確認できます。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\check_setup.ps1
+```
+
+LAN公開で使う場合は、ホスト設定も合わせて確認できます。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\check_setup.ps1 -HostAddress 0.0.0.0 -Port 8808
+```
+
 ### 2回目以降
 
 ```powershell
