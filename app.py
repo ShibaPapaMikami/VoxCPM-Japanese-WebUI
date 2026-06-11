@@ -588,6 +588,10 @@ def _has_any(text: str, keywords: tuple[str, ...]) -> bool:
     return any(keyword in text for keyword in keywords)
 
 
+def _contains_japanese(text: str) -> bool:
+    return bool(re.search(r"[ぁ-んァ-ヶ一-龯]", text or ""))
+
+
 def _build_structured_voice_prompt(
     age_label: str,
     gender_label: str,
@@ -628,6 +632,24 @@ def _build_structured_voice_prompt(
     for label in feature_labels or []:
         if label in feature_tags:
             tags.append(feature_tags[label])
+    if not tags:
+        return ""
+    return f"Voice profile: {', '.join(dict.fromkeys(tags))}."
+
+
+def _build_voxcpm_voice_profile_prompt(
+    age_label: str,
+    gender_label: str,
+    feature_labels: Optional[list[str]],
+    control_instruction: str,
+) -> str:
+    tags: list[str] = []
+    for part in (_build_structured_voice_prompt(age_label, gender_label, feature_labels), _build_control_prompt(control_instruction)):
+        clean = (part or "").strip()
+        if not clean:
+            continue
+        clean = re.sub(r"^Voice profile:\s*", "", clean).strip().rstrip(".")
+        tags.extend(tag.strip() for tag in clean.split(",") if tag.strip())
     if not tags:
         return ""
     return f"Voice profile: {', '.join(dict.fromkeys(tags))}."
@@ -740,7 +762,18 @@ def _build_control_prompt(control_instruction: str) -> str:
 
     hints: list[str] = []
 
-    if _has_any(control, ("男性", "男声", "男の声", "男性声", "男っぽい")):
+    if _has_any(control, ("赤ちゃん", "乳児", "幼児")):
+        hints.extend(["baby-like voice", "very young tiny timbre"])
+    elif _has_any(control, ("子供", "こども", "児童", "少年", "少女")):
+        hints.extend(["child voice", "young child timbre"])
+    elif _has_any(control, ("若者", "若い", "青年", "若年")):
+        hints.append("young adult voice")
+    elif _has_any(control, ("大人", "成人")):
+        hints.append("adult voice")
+    elif _has_any(control, ("老人", "高齢", "年配", "シニア")):
+        hints.extend(["elderly voice", "aged timbre"])
+
+    if _has_any(control, ("男性", "男声", "男の声", "男性声", "男っぽい", "男性ナレーション")):
         hints.extend(
             [
                 "adult Japanese male voice",
@@ -748,24 +781,44 @@ def _build_control_prompt(control_instruction: str) -> str:
                 "low to medium-low pitch",
             ]
         )
-    elif _has_any(control, ("女性", "女声", "女の声", "女性声", "女っぽい")):
+    elif _has_any(control, ("女性", "女声", "女の声", "女性声", "女っぽい", "女性ナレーション")):
         hints.extend(["adult Japanese female voice", "female timbre"])
+    elif _has_any(control, ("中性的", "ジェンダーニュートラル", "性別不明")):
+        hints.append("androgynous gender-neutral voice")
 
     if _has_any(control, ("ナレーション", "ナレーター", "アナウンス", "朗読")):
         hints.append("professional narrator voice")
     if _has_any(control, ("落ち着", "穏やか", "冷静", "しっとり")):
         hints.append("calm and composed tone")
+    if _has_any(control, ("やさしい", "優しい", "柔らか", "温か", "親しみ")):
+        hints.append("gentle warm friendly tone")
+    if _has_any(control, ("明るい", "明るく", "快活")):
+        hints.append("bright tone")
+    if _has_any(control, ("暗い", "陰気", "重い")):
+        hints.append("dark subdued tone")
+    if _has_any(control, ("元気", "活発", "楽しそう", "楽しい")):
+        hints.append("energetic delivery")
     if _has_any(control, ("聞き取りやす", "明瞭", "はっきり", "滑舌")):
         hints.append("clear articulation")
     if _has_any(control, ("ゆっくり", "ゆったり", "少し遅", "遅め")):
         hints.append("slightly slow speaking pace")
+    if _has_any(control, ("早口", "速い", "速め", "テンポよく")):
+        hints.append("fast speaking pace")
     if _has_any(control, ("低い", "低め", "低音", "渋い")):
         hints.append("low pitch")
+    if _has_any(control, ("高い", "高め", "高音")):
+        hints.append("high pitch")
     if _has_any(control, ("かわいい", "可愛い", "幼い", "少女", "若い女性")):
         hints.append("cute youthful voice")
+    if _has_any(control, ("自然", "自然な")):
+        hints.append("natural delivery")
+    if _has_any(control, ("ニュース", "報道")):
+        hints.append("newsreader style")
 
     if hints:
-        return f"{', '.join(dict.fromkeys(hints))}. {control}"
+        return f"{', '.join(dict.fromkeys(hints))}."
+    if _contains_japanese(control):
+        return "natural Japanese speaking voice, clear articulation."
     return control
 
 
@@ -2514,7 +2567,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             )
             return audio, output_path, gr.update(choices=_list_voice_design_history(), value=output_path)
 
-        control_prompt = _combine_voice_profile_prompt(
+        control_prompt = _build_voxcpm_voice_profile_prompt(
             voice_age,
             voice_gender,
             voice_features,
@@ -2815,7 +2868,12 @@ def create_demo_interface(demo: VoxCPMDemo):
             )
         sr, wav_np = demo.generate_tts_audio(
             text_input=text,
-            control_instruction=control_instruction,
+            control_instruction=_build_voxcpm_voice_profile_prompt(
+                voice_age,
+                voice_gender,
+                voice_features,
+                control_instruction,
+            ),
             intonation_instruction=intonation_instruction,
             word_accent_instruction=word_accent_instruction,
             target_language=target_language,
@@ -3253,6 +3311,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         design_control = gr.Textbox(
                             value="低めの落ち着いた日本語の男性ナレーション。大人の男性声で、聞き取りやすく、少しゆっくり話す。",
                             label="声の指示",
+                            info="VoxCPM2では日本語の年齢・性別・特徴を英語の声質ヒントへ補強して反映します。",
                             placeholder="例: 低めの男性ナレーション / やさしい女性の声 / 元気なキャラクター声",
                             lines=3,
                         )
@@ -3522,6 +3581,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         clone_control = gr.Textbox(
                             value="自然で聞き取りやすく、落ち着いた話し方",
                             label="声の指示（任意）",
+                            info="VoxCPM2では日本語の声質指定を英語ヒントへ補強します。参照音声と矛盾しすぎる指定は効果が弱くなります。",
                             placeholder="例: 少し明るく / ゆっくり丁寧に / 感情を抑えて",
                             lines=2,
                         )
