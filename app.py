@@ -3237,6 +3237,202 @@ def create_demo_interface(demo: VoxCPMDemo):
         prefix = "high_fidelity_safe_clone" if prevent_leading_mix else "high_fidelity_clone"
         return (sr, wav_np), _save_wav_for_download(sr, wav_np, prefix, filename_hint)
 
+    def _count_text_chars(text: str) -> int:
+        return len((text or "").strip())
+
+    def _estimate_seconds(
+        engine_label: str,
+        text: str = "",
+        dit_steps: int = 0,
+        count: int = 1,
+        line_count: int = 0,
+        mode: str = "single",
+    ) -> tuple[int, int]:
+        chars = max(1, _count_text_chars(text))
+        count_i = max(1, int(count or 1))
+        if mode == "corpus":
+            lines = max(1, int(line_count or 1))
+            per_line = 18 + min(35, chars / max(lines, 1) * 0.18)
+            base = 25 + per_line * lines
+        elif _engine_is_qwen3(engine_label):
+            base = 35 + chars * 0.22
+        elif _engine_is_irodori(engine_label):
+            base = 20 + chars * 0.14
+        else:
+            steps = max(1, int(dit_steps or 10))
+            base = 18 + chars * 0.16 + steps * 0.9
+        total = max(8, int(base * count_i))
+        return int(total * 0.8), int(total * 1.8)
+
+    def _format_seconds(seconds: int) -> str:
+        seconds = max(1, int(seconds))
+        minutes, rest = divmod(seconds, 60)
+        if minutes:
+            return f"{minutes}分{rest:02d}秒"
+        return f"{rest}秒"
+
+    def _preflight_text(title: str, issues: list[str], seconds_range: tuple[int, int], notes: Optional[list[str]] = None) -> str:
+        state = "生成できます" if not issues else "確認が必要です"
+        estimate = f"{_format_seconds(seconds_range[0])}〜{_format_seconds(seconds_range[1])}"
+        lines = [
+            f"**生成前チェック: {title}**",
+            f"- 状態: {state}",
+            f"- 推定時間: 約{estimate}",
+        ]
+        if issues:
+            lines.append("- 不足: " + " / ".join(issues))
+        if notes:
+            lines.append("- メモ: " + " / ".join(note for note in notes if note))
+        lines.append("- 初回生成、モデル読込直後、GPU負荷が高い場合は長めにかかります。")
+        return "\n".join(lines)
+
+    def _design_preflight(
+        engine_label: str,
+        text: str,
+        voice_age: str,
+        voice_gender: str,
+        voice_features: Optional[list[str]],
+        control_instruction: str,
+        target_language: str,
+        dit_steps: int,
+        count: int = 1,
+    ) -> str:
+        issues = []
+        notes = []
+        if not (text or "").strip():
+            issues.append("読み上げテキスト")
+        if _engine_is_irodori(engine_label) and _LANGUAGE_HINTS.get(target_language or "") != "Japanese":
+            issues.append("Irodori-TTSは日本語を選択してください")
+        if not (control_instruction or "").strip() and not voice_features:
+            notes.append("声の指示または特徴を入れると声質が安定しやすいです")
+        if _engine_is_qwen3(engine_label) and int(count or 1) > 1:
+            notes.append(f"{int(count)}候補を連続生成します")
+        return _preflight_text(
+            "声のデザイン",
+            issues,
+            _estimate_seconds(engine_label, text, dit_steps=dit_steps, count=count),
+            notes,
+        )
+
+    def _design_reuse_preflight(
+        engine_label: str,
+        history_wav: Optional[str],
+        text: str,
+        target_language: str,
+        dit_steps: int,
+    ) -> str:
+        issues = []
+        notes = []
+        if not history_wav:
+            issues.append("再利用する声")
+        if not (text or "").strip():
+            issues.append("読み上げテキスト")
+        if _engine_is_irodori(engine_label) and _LANGUAGE_HINTS.get(target_language or "") != "Japanese":
+            issues.append("Irodori-TTSは日本語を選択してください")
+        if _engine_is_qwen3(engine_label) and history_wav and not _read_reference_text_sidecar(history_wav):
+            issues.append("Qwen3履歴の参照テキスト")
+        if history_wav:
+            notes.append(f"参照: {Path(history_wav).name}")
+        return _preflight_text(
+            "履歴の声で生成",
+            issues,
+            _estimate_seconds(engine_label, text, dit_steps=dit_steps, count=1),
+            notes,
+        )
+
+    def _clone_preflight(
+        engine_label: str,
+        text: str,
+        ref_wav: Optional[str],
+        history_wav: Optional[str],
+        qwen3_ref_text: str,
+        target_language: str,
+        dit_steps: int,
+    ) -> str:
+        issues = []
+        notes = []
+        if not ref_wav and not history_wav:
+            issues.append("参照音声または履歴の声")
+        if not (text or "").strip():
+            issues.append("読み上げテキスト")
+        if _engine_is_irodori(engine_label) and _LANGUAGE_HINTS.get(target_language or "") != "Japanese":
+            issues.append("Irodori-TTSは日本語を選択してください")
+        if _engine_is_qwen3(engine_label):
+            has_sidecar = bool(history_wav and _read_reference_text_sidecar(history_wav))
+            if not (qwen3_ref_text or "").strip() and not has_sidecar:
+                issues.append("参照音声の文字起こし")
+        if ref_wav:
+            notes.append(f"参照: {Path(ref_wav).name}")
+        elif history_wav:
+            notes.append(f"履歴: {Path(history_wav).name}")
+        return _preflight_text(
+            "声のクローン",
+            issues,
+            _estimate_seconds(engine_label, text, dit_steps=dit_steps, count=1),
+            notes,
+        )
+
+    def _corpus_preflight(
+        engine_label: str,
+        ref_wav: Optional[str],
+        history_wav: Optional[str],
+        qwen3_ref_text: str,
+        target_language: str,
+        corpus_text: str,
+        corpus_file: Optional[str],
+        max_lines: int,
+    ) -> str:
+        issues = []
+        notes = []
+        if not _engine_is_qwen3(engine_label):
+            issues.append("VoiceDesignCloner連携（Qwen3-TTS・簡易）を選択")
+        if not ref_wav and not history_wav:
+            issues.append("参照音声または履歴の声")
+        has_sidecar = bool(history_wav and _read_reference_text_sidecar(history_wav))
+        if not (qwen3_ref_text or "").strip() and not has_sidecar:
+            issues.append("参照音声の文字起こし")
+        try:
+            lines = _collect_corpus_lines(corpus_text, corpus_file, max_lines)
+        except Exception:
+            lines = []
+            issues.append("コーパス本文またはTXT")
+        if lines:
+            notes.append(f"{len(lines)}文を生成予定")
+        return _preflight_text(
+            "コーパス一括音声化",
+            issues,
+            _estimate_seconds(engine_label, "\n".join(lines or [corpus_text or ""]), count=1, line_count=len(lines), mode="corpus"),
+            notes,
+        )
+
+    def _hifi_preflight(
+        engine_label: str,
+        text: str,
+        ref_wav: Optional[str],
+        history_wav: Optional[str],
+        prompt_text_value: str,
+        prevent_leading_mix: bool,
+        dit_steps: int,
+    ) -> str:
+        issues = []
+        notes = []
+        if _engine_is_irodori(engine_label) or _engine_is_qwen3(engine_label):
+            issues.append("高精度クローンはVoxCPM2を選択")
+        if not ref_wav and not history_wav:
+            issues.append("参照音声または履歴の声")
+        if not (text or "").strip():
+            issues.append("続けて読み上げるテキスト")
+        if not prevent_leading_mix and not (prompt_text_value or "").strip():
+            issues.append("参照音声の文字起こし")
+        if prevent_leading_mix:
+            notes.append("冒頭混入防止を優先し、文字起こしは声質参照には使いません")
+        return _preflight_text(
+            "高精度クローン",
+            issues,
+            _estimate_seconds(engine_label, text, dit_steps=dit_steps, count=1),
+            notes,
+        )
+
     def _transcribe_reference(audio_path: Optional[str], history_wav: Optional[str] = None):
         try:
             ref_source = _resolve_reference_audio(audio_path, history_wav, "自動文字起こし")
@@ -3609,6 +3805,19 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 cfg_default=2.6,
                             )
                         design_btn = gr.Button("この声を生成", variant="primary", size="lg")
+                        design_preflight = gr.Markdown(
+                            _design_preflight(
+                                _ENGINE_VOXCPM,
+                                DEFAULT_TARGET_TEXT,
+                                "大人",
+                                "男性",
+                                ["落ち着いた", "ナレーション", "聞き取りやすい", "ゆっくり"],
+                                "低めの落ち着いた日本語の男性ナレーション。大人の男性声で、聞き取りやすく、少しゆっくり話す。",
+                                "日本語",
+                                10,
+                                1,
+                            )
+                        )
                         with gr.Group(visible=False) as design_qwen3_single_group:
                             gr.Markdown(
                                 "**Qwen3-TTS 生成**\n\n"
@@ -3624,6 +3833,19 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 info="候補を増やすほど生成時間とVRAM使用時間が増えます。",
                             )
                             design_qwen3_generate_btn = gr.Button("指定数を生成", variant="primary", size="lg")
+                            design_qwen3_preflight = gr.Markdown(
+                                _design_preflight(
+                                    _ENGINE_QWEN3,
+                                    DEFAULT_TARGET_TEXT,
+                                    "大人",
+                                    "男性",
+                                    ["落ち着いた", "ナレーション", "聞き取りやすい", "ゆっくり"],
+                                    "低めの落ち着いた日本語の男性ナレーション。大人の男性声で、聞き取りやすく、少しゆっくり話す。",
+                                    "日本語",
+                                    10,
+                                    1,
+                                )
+                            )
                     with gr.Column():
                         design_output = gr.Audio(label="生成された音声")
                         design_file = gr.File(label="WAVダウンロード", interactive=False)
@@ -3726,6 +3948,15 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 lines=1,
                             )
                             design_reuse_btn = gr.Button("履歴の声で生成", variant="primary")
+                            design_reuse_preflight = gr.Markdown(
+                                _design_reuse_preflight(
+                                    _ENGINE_VOXCPM,
+                                    (initial_design_history_choices[0][1] if initial_design_history_choices else None),
+                                    "この声で、別のセリフも読んでみます。",
+                                    "日本語",
+                                    10,
+                                )
+                            )
                             design_reuse_output = gr.Audio(label="履歴の声で生成された音声")
                             design_reuse_file = gr.File(label="WAVダウンロード", interactive=False)
 
@@ -3986,6 +4217,17 @@ def create_demo_interface(demo: VoxCPMDemo):
                         with gr.Group() as clone_advanced_group:
                             clone_denoise, clone_normalize, clone_cfg, clone_steps = _advanced_settings(include_denoise=True)
                         clone_btn = gr.Button("この声で生成", variant="primary", size="lg")
+                        clone_preflight = gr.Markdown(
+                            _clone_preflight(
+                                _ENGINE_VOXCPM,
+                                "これは参照音声を使った声のクローン生成テストです。",
+                                None,
+                                None,
+                                "",
+                                "日本語",
+                                10,
+                            )
+                        )
                         with gr.Group(visible=False) as clone_qwen3_corpus_group:
                             gr.Markdown(
                                 "**コーパス一括音声化（簡易）**\n\n"
@@ -4024,6 +4266,18 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 lines=1,
                             )
                             clone_corpus_btn = gr.Button("コーパスを一括生成", variant="secondary")
+                            clone_corpus_preflight = gr.Markdown(
+                                _corpus_preflight(
+                                    _ENGINE_QWEN3,
+                                    None,
+                                    None,
+                                    "",
+                                    "日本語",
+                                    "今日は新しい音声モデルのテストをしています。\nこの声で複数の文章を読み上げます。\n自然で聞き取りやすい音声を目指します。",
+                                    None,
+                                    10,
+                                )
+                            )
                     with gr.Column():
                         clone_output = gr.Audio(label="生成された音声")
                         clone_file = gr.File(label="WAVダウンロード", interactive=False)
@@ -4436,6 +4690,17 @@ def create_demo_interface(demo: VoxCPMDemo):
                             _add_prosody_controls(hifi_text)
                             hifi_denoise, hifi_normalize, hifi_cfg, hifi_steps = _advanced_settings(include_denoise=True)
                             hifi_btn = gr.Button("高精度クローンで生成", variant="primary", size="lg")
+                            hifi_preflight = gr.Markdown(
+                                _hifi_preflight(
+                                    _ENGINE_VOXCPM,
+                                    "これは高精度クローンを使った音声生成テストです。",
+                                    None,
+                                    None,
+                                    "",
+                                    True,
+                                    10,
+                                )
+                            )
                         with gr.Column():
                             hifi_output = gr.Audio(label="生成された音声")
                             hifi_file = gr.File(label="WAVダウンロード", interactive=False)
@@ -4508,6 +4773,122 @@ def create_demo_interface(demo: VoxCPMDemo):
                     show_progress=True,
                     api_name="high_fidelity_clone",
                 )
+
+        design_preflight_inputs = [
+            engine_selector,
+            design_text,
+            design_voice_age,
+            design_voice_gender,
+            design_voice_features,
+            design_control,
+            design_language,
+            design_steps,
+        ]
+        for trigger in design_preflight_inputs:
+            trigger.change(
+                fn=_design_preflight,
+                inputs=design_preflight_inputs,
+                outputs=[design_preflight],
+                show_progress=False,
+                api_name=None,
+                api_visibility="private",
+            )
+
+        design_qwen3_preflight_inputs = [
+            engine_selector,
+            design_text,
+            design_voice_age,
+            design_voice_gender,
+            design_voice_features,
+            design_control,
+            design_language,
+            design_steps,
+            design_qwen3_count,
+        ]
+        for trigger in design_qwen3_preflight_inputs:
+            trigger.change(
+                fn=_design_preflight,
+                inputs=design_qwen3_preflight_inputs,
+                outputs=[design_qwen3_preflight],
+                show_progress=False,
+                api_name=None,
+                api_visibility="private",
+            )
+
+        design_reuse_preflight_inputs = [
+            engine_selector,
+            design_history,
+            design_reuse_text,
+            design_language,
+            design_steps,
+        ]
+        for trigger in design_reuse_preflight_inputs:
+            trigger.change(
+                fn=_design_reuse_preflight,
+                inputs=design_reuse_preflight_inputs,
+                outputs=[design_reuse_preflight],
+                show_progress=False,
+                api_name=None,
+                api_visibility="private",
+            )
+
+        clone_preflight_inputs = [
+            engine_selector,
+            clone_text,
+            clone_ref,
+            clone_history,
+            clone_qwen3_ref_text,
+            clone_language,
+            clone_steps,
+        ]
+        for trigger in clone_preflight_inputs:
+            trigger.change(
+                fn=_clone_preflight,
+                inputs=clone_preflight_inputs,
+                outputs=[clone_preflight],
+                show_progress=False,
+                api_name=None,
+                api_visibility="private",
+            )
+
+        clone_corpus_preflight_inputs = [
+            engine_selector,
+            clone_ref,
+            clone_history,
+            clone_qwen3_ref_text,
+            clone_language,
+            clone_corpus_text,
+            clone_corpus_file,
+            clone_corpus_limit,
+        ]
+        for trigger in clone_corpus_preflight_inputs:
+            trigger.change(
+                fn=_corpus_preflight,
+                inputs=clone_corpus_preflight_inputs,
+                outputs=[clone_corpus_preflight],
+                show_progress=False,
+                api_name=None,
+                api_visibility="private",
+            )
+
+        hifi_preflight_inputs = [
+            engine_selector,
+            hifi_text,
+            hifi_ref,
+            hifi_history,
+            hifi_prompt_text,
+            hifi_prevent_leading_mix,
+            hifi_steps,
+        ]
+        for trigger in hifi_preflight_inputs:
+            trigger.change(
+                fn=_hifi_preflight,
+                inputs=hifi_preflight_inputs,
+                outputs=[hifi_preflight],
+                show_progress=False,
+                api_name=None,
+                api_visibility="private",
+            )
 
         engine_visibility_outputs = [
             app_header,
