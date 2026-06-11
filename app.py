@@ -2037,6 +2037,9 @@ def create_demo_interface(demo: VoxCPMDemo):
         text_entries: dict[str, str] = {}
         malformed_lines = 0
         empty_text_lines = 0
+        duplicate_text_ids: list[str] = []
+        short_text_entries: list[str] = []
+        long_text_entries: list[str] = []
         for line in text_file.read_text(encoding="utf-8-sig").splitlines():
             clean = line.strip()
             if not clean:
@@ -2050,6 +2053,12 @@ def create_demo_interface(demo: VoxCPMDemo):
             if not stem or not body:
                 empty_text_lines += 1
                 continue
+            if stem in text_entries:
+                duplicate_text_ids.append(stem)
+            if len(body) < 3:
+                short_text_entries.append(stem)
+            if len(body) > 180:
+                long_text_entries.append(stem)
             text_entries[stem] = body
 
         wav_files = sorted(wav_dir.glob("*.wav"))
@@ -2103,12 +2112,31 @@ def create_demo_interface(demo: VoxCPMDemo):
             warnings.append(f"読み込めないWAVがあります: {len(unreadable_files)}件")
         if any(ch != 1 for ch in channels):
             warnings.append("モノラル以外のWAVがあります。可能ならリサンプルで mono / PCM_16 に整えてください。")
+        if any(sr != 48000 for sr in sample_rates):
+            warnings.append("48kHz以外のWAVがあります。学習前エンコードで48kHzへ変換しますが、音質確認のため先に揃えると安心です。")
+        if duplicate_text_ids:
+            warnings.append(f"同じIDのテキスト行があります。後の行だけが使われます: {len(duplicate_text_ids)}件")
+        if short_text_entries:
+            warnings.append(f"短すぎるテキストがあります: {len(short_text_entries)}件")
+        if long_text_entries:
+            warnings.append(f"長すぎるテキストがあります。1文を短めに分けると安定しやすいです: {len(long_text_entries)}件")
+
+        criticals: list[str] = []
+        valid_audio_count = len(durations)
+        if not matched:
+            criticals.append("テキストとWAVの対応が1件もありません。")
+        if valid_audio_count == 0:
+            criticals.append("読み込めるWAVが1件もありません。")
+        if valid_audio_count and valid_audio_count < len(matched):
+            criticals.append(f"対応済みデータのうち読み込めないWAVがあります: {len(matched) - valid_audio_count}件")
 
         total_sec = sum(durations)
         avg_sec = (total_sec / len(durations)) if durations else 0.0
         min_sec = min(durations) if durations else 0.0
         max_sec = max(durations) if durations else 0.0
-        status = "OK" if not warnings else "確認してください"
+        if total_sec and total_sec < 60.0:
+            warnings.append("合計音声が60秒未満です。動作確認向けです。声質を安定させるには数分以上あると安心です。")
+        status = "停止してください" if criticals else ("OK" if not warnings else "確認してください")
         lines = [
             f"品質チェック: {status}",
             "",
@@ -2124,6 +2152,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             f"- チャンネル: {', '.join(f'{ch}ch x{count}' for ch, count in sorted(channels.items())) or '未確認'}",
             f"- 形式: {', '.join(f'{name} x{count}' for name, count in sorted(subtypes.items())) or '未確認'}",
         ]
+        if criticals:
+            lines.extend(["", "実学習前に必ず直す項目:", *[f"- {critical}" for critical in criticals]])
         if warnings:
             lines.extend(["", "注意:", *[f"- {warning}" for warning in warnings]])
         else:
@@ -2140,6 +2170,9 @@ def create_demo_interface(demo: VoxCPMDemo):
             ("短すぎるWAV", short_files),
             ("長すぎるWAV", long_files),
             ("読み込み不可WAV", unreadable_files),
+            ("重複テキストID", duplicate_text_ids),
+            ("短すぎるテキスト", short_text_entries),
+            ("長すぎるテキスト", long_text_entries),
         ]
         for label, names in details:
             if names:
@@ -2366,6 +2399,11 @@ def create_demo_interface(demo: VoxCPMDemo):
 
         try:
             lab_dir = _resolve_lora_lab_dir(lab_dir_path)
+            preflight_report = _check_irodori_lora_lab_data(str(lab_dir))
+            logs.append("[事前チェック]")
+            logs.extend(preflight_report.splitlines())
+            if not dry_run and "実学習前に必ず直す項目:" in preflight_report:
+                raise RuntimeError("LoRA学習データに実学習前に直すべき項目があります。上の事前チェック結果を確認してください。")
             speaker, emotion, jsonl_path = _write_lora_training_jsonl_from_lab(lab_dir)
             irodori_root = demo.irodori_project_dir()
             irodori_python = _irodori_python_path()
@@ -4410,7 +4448,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                             clone_lora_jsonl_file = gr.File(label="training JSONL", interactive=False)
                             gr.Markdown(
                                 "**LoRA学習実行（実験）**\n\n"
-                                "既定ではドライランです。ドライランでは学習せず、実行されるコマンドだけを確認します。実学習はGPUを使うため、まず少ないステップ数で試してください。"
+                                "既定ではドライランです。ドライランでは学習せず、品質チェックと実行コマンドを確認します。"
+                                "実学習前にも同じチェックを自動実行し、対応データやWAVに致命的な不足がある場合は停止します。"
                             )
                             clone_lora_train_lab_dir = gr.Textbox(
                                 value="",
@@ -4418,12 +4457,12 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 placeholder="例: D:\\AIProduct\\VoxCPM\\outputs\\lora_data\\lab\\honoka\\Neutral",
                                 interactive=True,
                             )
-                            clone_lora_quality_btn = gr.Button("学習データをチェック", variant="secondary")
+                            clone_lora_quality_btn = gr.Button("学習データを事前チェック", variant="secondary")
                             clone_lora_quality_status = gr.Textbox(
                                 value="",
-                                label="学習データ品質チェック",
+                                label="学習データ事前チェック",
                                 interactive=False,
-                                lines=12,
+                                lines=16,
                             )
                             with gr.Row():
                                 clone_lora_train_steps = gr.Number(
