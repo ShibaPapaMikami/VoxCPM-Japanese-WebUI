@@ -7,6 +7,7 @@ voxcpm.egg-info
 .DS_Store
 pretrained_models/
 outputs/
+dist/
 external/
 app_local.py
 .uv-cache/
