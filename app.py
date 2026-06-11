@@ -1419,8 +1419,100 @@ def create_demo_interface(demo: VoxCPMDemo):
         choices = []
         for path in sorted(set(history_paths), key=lambda p: p.stat().st_mtime, reverse=True)[:50]:
             timestamp = datetime.fromtimestamp(path.stat().st_mtime).strftime("%m/%d %H:%M")
-            choices.append((f"{timestamp} - {path.name}", str(path)))
+            metadata = _read_voice_history_metadata(path)
+            rating = int(metadata.get("rating") or 0)
+            rating_text = f" {'★' * rating}" if rating > 0 else ""
+            tags = metadata.get("tags") or []
+            tag_text = f" [{', '.join(tags[:3])}]" if tags else ""
+            choices.append((f"{timestamp}{rating_text}{tag_text} - {path.name}", str(path)))
         return choices
+
+    def _voice_history_metadata_path(wav_path: Path) -> Path:
+        return wav_path.with_suffix(".json")
+
+    def _read_voice_history_metadata(wav_path: Optional[Path | str]) -> dict:
+        if not wav_path:
+            return {}
+        try:
+            path = Path(wav_path)
+            metadata_path = _voice_history_metadata_path(path)
+            if metadata_path.is_file():
+                data = json.loads(metadata_path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    return data
+        except Exception as e:
+            logger.warning("Failed to read voice history metadata: %s", e)
+        return {}
+
+    def _parse_history_tags(tags_text: str) -> list[str]:
+        raw_tags = re.split(r"[,、\n]", tags_text or "")
+        tags = []
+        for tag in raw_tags:
+            clean = tag.strip().strip("#")
+            if clean and clean not in tags:
+                tags.append(clean[:24])
+        return tags[:12]
+
+    def _rating_label_to_int(rating_label: str) -> int:
+        rating = (rating_label or "").strip()
+        if rating.startswith("★★★★★"):
+            return 5
+        if rating.startswith("★★★★"):
+            return 4
+        if rating.startswith("★★★"):
+            return 3
+        if rating.startswith("★★"):
+            return 2
+        if rating.startswith("★"):
+            return 1
+        return 0
+
+    def _rating_int_to_label(rating: object) -> str:
+        try:
+            value = max(0, min(int(rating or 0), 5))
+        except Exception:
+            value = 0
+        return "未評価" if value == 0 else "★" * value
+
+    def _load_voice_history_metadata(history_wav: Optional[str]):
+        if not history_wav:
+            return "未評価", "", "", "履歴を選択してください。"
+        metadata = _read_voice_history_metadata(history_wav)
+        tags = metadata.get("tags") or []
+        memo = (metadata.get("memo") or "").strip()
+        if not metadata:
+            return "未評価", "", "", "この履歴にはまだメモがありません。"
+        updated_at = metadata.get("updated_at") or "不明"
+        message = f"メタ情報を読み込みました。更新: {updated_at}"
+        return _rating_int_to_label(metadata.get("rating")), "、".join(tags), memo, message
+
+    def _save_voice_history_metadata(
+        history_wav: Optional[str],
+        rating_label: str,
+        tags_text: str,
+        memo: str,
+    ):
+        if not history_wav:
+            return gr.update(), "未評価", "", "", "保存する履歴を選択してください。"
+        output_dir = _output_dir().resolve()
+        target = Path(history_wav).resolve()
+        if output_dir not in target.parents:
+            raise ValueError("現在の保存先フォルダ内の履歴ファイルだけ編集できます。")
+        if not target.is_file():
+            raise ValueError(f"履歴ファイルが見つかりません: {target}")
+        metadata = {
+            "version": 1,
+            "wav": target.name,
+            "rating": _rating_label_to_int(rating_label),
+            "tags": _parse_history_tags(tags_text),
+            "memo": (memo or "").strip()[:2000],
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        metadata_path = _voice_history_metadata_path(target)
+        metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        choices = _list_voice_design_history()
+        message = f"保存しました: {metadata_path.name}"
+        return gr.update(choices=choices, value=str(target)), _rating_int_to_label(metadata["rating"]), "、".join(metadata["tags"]), metadata["memo"], message
 
     def _resolve_output_dir(folder_path: str = "") -> Path:
         folder_path = (folder_path or "").strip()
@@ -2742,6 +2834,12 @@ def create_demo_interface(demo: VoxCPMDemo):
             raise ValueError("現在の保存先フォルダ内の履歴ファイルだけ削除できます。")
         if target.exists():
             target.unlink()
+            for sidecar in (_voice_history_metadata_path(target), target.with_suffix(".txt")):
+                try:
+                    if sidecar.exists():
+                        sidecar.unlink()
+                except OSError as e:
+                    logger.warning("Failed to delete sidecar %s: %s", sidecar, e)
             message = f"削除しました: {target.name}"
         else:
             message = "ファイルは既に存在しません。履歴を更新しました。"
@@ -3403,6 +3501,26 @@ def create_demo_interface(demo: VoxCPMDemo):
                             design_history_refresh = gr.Button("履歴を更新", variant="secondary", size="sm")
                             design_history_delete = gr.Button("選択した履歴を削除", variant="stop", size="sm")
                             design_history_status = gr.Markdown("")
+                            with gr.Accordion("履歴メモ", open=False):
+                                gr.Markdown("選択中の声に評価・タグ・メモを付けます。WAVの横にJSONとして保存されます。")
+                                design_history_rating = gr.Dropdown(
+                                    choices=["未評価", "★", "★★", "★★★", "★★★★", "★★★★★"],
+                                    value="未評価",
+                                    label="評価",
+                                )
+                                design_history_tags = gr.Textbox(
+                                    value="",
+                                    label="タグ",
+                                    placeholder="例: 男性、低め、ナレーション、採用候補",
+                                    lines=1,
+                                )
+                                design_history_memo = gr.Textbox(
+                                    value="",
+                                    label="メモ",
+                                    placeholder="例: 社内ナレーション向け。落ち着きは良いが少し低め。",
+                                    lines=3,
+                                )
+                                design_history_meta_save = gr.Button("履歴メモを保存", variant="secondary", size="sm")
                             design_reuse_text = gr.Textbox(
                                 value="この声で、別のセリフも読んでみます。",
                                 label="この声で読み上げるテキスト",
@@ -3484,6 +3602,38 @@ def create_demo_interface(demo: VoxCPMDemo):
                     inputs=[],
                     outputs=[design_history],
                     show_progress=False,
+                )
+                design_history.change(
+                    fn=_load_voice_history_metadata,
+                    inputs=[design_history],
+                    outputs=[
+                        design_history_rating,
+                        design_history_tags,
+                        design_history_memo,
+                        design_history_status,
+                    ],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
+                )
+                design_history_meta_save.click(
+                    fn=_save_voice_history_metadata,
+                    inputs=[
+                        design_history,
+                        design_history_rating,
+                        design_history_tags,
+                        design_history_memo,
+                    ],
+                    outputs=[
+                        design_history,
+                        design_history_rating,
+                        design_history_tags,
+                        design_history_memo,
+                        design_history_status,
+                    ],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
                 )
                 design_irodori_lora_refresh.click(
                     fn=_lora_adapter_dropdown_update,
