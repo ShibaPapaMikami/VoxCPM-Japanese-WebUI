@@ -1402,7 +1402,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         pass
     current_output_dir = {"path": initial_output_dir}
 
-    def _list_voice_design_history():
+    def _voice_history_paths() -> list[Path]:
         output_dir = _output_dir(create=False)
         if not output_dir.exists():
             return []
@@ -1416,8 +1416,42 @@ def create_demo_interface(demo: VoxCPMDemo):
             "qwen3_history_reuse_*.wav",
         ):
             history_paths.extend(output_dir.glob(pattern))
+        return list(set(history_paths))
+
+    def _voice_history_matches(path: Path, metadata: dict, query: str) -> bool:
+        clean_query = (query or "").strip().lower()
+        if not clean_query:
+            return True
+        tags = " ".join(str(tag) for tag in metadata.get("tags") or [])
+        haystack = " ".join(
+            [
+                path.name,
+                tags,
+                str(metadata.get("memo") or ""),
+            ]
+        ).lower()
+        return all(token in haystack for token in re.split(r"\s+", clean_query) if token)
+
+    def _voice_history_sort_key(path: Path, sort_order: str):
+        metadata = _read_voice_history_metadata(path)
+        rating = int(metadata.get("rating") or 0)
+        mtime = path.stat().st_mtime
+        if sort_order == "古い順":
+            return (mtime, path.name.lower())
+        if sort_order == "評価が高い順":
+            return (-rating, -mtime, path.name.lower())
+        if sort_order == "名前順":
+            return (path.name.lower(), -mtime)
+        return (-mtime, path.name.lower())
+
+    def _list_voice_design_history(query: str = "", sort_order: str = "新しい順", limit: int = 50):
         choices = []
-        for path in sorted(set(history_paths), key=lambda p: p.stat().st_mtime, reverse=True)[:50]:
+        matched_paths = []
+        for path in _voice_history_paths():
+            metadata = _read_voice_history_metadata(path)
+            if _voice_history_matches(path, metadata, query):
+                matched_paths.append(path)
+        for path in sorted(matched_paths, key=lambda p: _voice_history_sort_key(p, sort_order))[:limit]:
             timestamp = datetime.fromtimestamp(path.stat().st_mtime).strftime("%m/%d %H:%M")
             metadata = _read_voice_history_metadata(path)
             rating = int(metadata.get("rating") or 0)
@@ -1486,14 +1520,80 @@ def create_demo_interface(demo: VoxCPMDemo):
         message = f"メタ情報を読み込みました。更新: {updated_at}"
         return _rating_int_to_label(metadata.get("rating")), "、".join(tags), memo, message
 
+    def _history_filter_result(query: str = "", sort_order: str = "新しい順", message: str = "", selected_value: Optional[str] = None):
+        choices = _list_voice_design_history(query, sort_order)
+        paths = [value for _, value in choices]
+        value = selected_value if selected_value in paths else (paths[0] if paths else None)
+        rating, tags, memo, load_message = _load_voice_history_metadata(value)
+        status = message or f"{len(choices)}件の履歴を表示しています。"
+        if value and not message and load_message:
+            status = f"{status}\n\n{load_message}"
+        return gr.update(choices=choices, value=value), paths, rating, tags, memo, status
+
+    def _apply_voice_history_filter(query: str, sort_order: str):
+        return _history_filter_result(query, sort_order)
+
+    def _delete_history_file_with_sidecars(target: Path) -> bool:
+        output_dir = _output_dir().resolve()
+        resolved = target.resolve()
+        if output_dir not in resolved.parents:
+            raise ValueError("現在の保存先フォルダ内の履歴ファイルだけ削除できます。")
+        if not resolved.exists():
+            return False
+        resolved.unlink()
+        for sidecar in (_voice_history_metadata_path(resolved), resolved.with_suffix(".txt")):
+            try:
+                if sidecar.exists():
+                    sidecar.unlink()
+            except OSError as e:
+                logger.warning("Failed to delete sidecar %s: %s", sidecar, e)
+        return True
+
+    def _bulk_delete_filtered_voice_history(
+        filtered_paths: Optional[list[str]],
+        confirm: bool,
+        query: str,
+        sort_order: str,
+    ):
+        paths = filtered_paths or []
+        if not paths:
+            return (*_history_filter_result(query, sort_order, "削除対象の履歴がありません。"), gr.update(value=False))
+        if not confirm:
+            return (
+                *_history_filter_result(
+                    query,
+                    sort_order,
+                    f"一括削除するには確認チェックを入れてください。対象: {len(paths)}件",
+                ),
+                gr.update(value=False),
+            )
+        deleted = 0
+        skipped = 0
+        for item in paths:
+            path = Path(item)
+            try:
+                if _delete_history_file_with_sidecars(path):
+                    deleted += 1
+                else:
+                    skipped += 1
+            except Exception as e:
+                skipped += 1
+                logger.warning("Failed to bulk delete history %s: %s", item, e)
+        message = f"{deleted}件の履歴を削除しました。"
+        if skipped:
+            message += f" {skipped}件は既に存在しないか削除できませんでした。"
+        return (*_history_filter_result(query, sort_order, message), gr.update(value=False))
+
     def _save_voice_history_metadata(
         history_wav: Optional[str],
         rating_label: str,
         tags_text: str,
         memo: str,
+        query: str = "",
+        sort_order: str = "新しい順",
     ):
         if not history_wav:
-            return gr.update(), "未評価", "", "", "保存する履歴を選択してください。"
+            return (*_history_filter_result(query, sort_order, "保存する履歴を選択してください。"),)
         output_dir = _output_dir().resolve()
         target = Path(history_wav).resolve()
         if output_dir not in target.parents:
@@ -1510,9 +1610,8 @@ def create_demo_interface(demo: VoxCPMDemo):
         }
         metadata_path = _voice_history_metadata_path(target)
         metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
-        choices = _list_voice_design_history()
         message = f"保存しました: {metadata_path.name}"
-        return gr.update(choices=choices, value=str(target)), _rating_int_to_label(metadata["rating"]), "、".join(metadata["tags"]), metadata["memo"], message
+        return _history_filter_result(query, sort_order, message, selected_value=str(target))
 
     def _resolve_output_dir(folder_path: str = "") -> Path:
         folder_path = (folder_path or "").strip()
@@ -2833,13 +2932,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         if output_dir not in target.parents:
             raise ValueError("現在の保存先フォルダ内の履歴ファイルだけ削除できます。")
         if target.exists():
-            target.unlink()
-            for sidecar in (_voice_history_metadata_path(target), target.with_suffix(".txt")):
-                try:
-                    if sidecar.exists():
-                        sidecar.unlink()
-                except OSError as e:
-                    logger.warning("Failed to delete sidecar %s: %s", sidecar, e)
+            _delete_history_file_with_sidecars(target)
             message = f"削除しました: {target.name}"
         else:
             message = "ファイルは既に存在しません。履歴を更新しました。"
@@ -3492,14 +3585,34 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 label="保存先フォルダ",
                                 interactive=False,
                             )
+                            with gr.Row():
+                                design_history_search = gr.Textbox(
+                                    value="",
+                                    label="履歴検索",
+                                    placeholder="ファイル名、タグ、メモで検索",
+                                    lines=1,
+                                )
+                                design_history_sort = gr.Dropdown(
+                                    choices=["新しい順", "古い順", "評価が高い順", "名前順"],
+                                    value="新しい順",
+                                    label="並び順",
+                                )
+                            design_history_filter = gr.Button("検索・並び替えを適用", variant="secondary", size="sm")
+                            initial_design_history_choices = _list_voice_design_history()
+                            design_history_filtered_paths = gr.State([value for _, value in initial_design_history_choices])
                             design_history = gr.Dropdown(
-                                choices=_list_voice_design_history(),
-                                value=(_list_voice_design_history()[0][1] if _list_voice_design_history() else None),
+                                choices=initial_design_history_choices,
+                                value=(initial_design_history_choices[0][1] if initial_design_history_choices else None),
                                 label="再利用する声",
                                 info="新しく声を生成すると、この履歴に追加されます。",
                             )
                             design_history_refresh = gr.Button("履歴を更新", variant="secondary", size="sm")
                             design_history_delete = gr.Button("選択した履歴を削除", variant="stop", size="sm")
+                            design_history_bulk_confirm = gr.Checkbox(
+                                value=False,
+                                label="表示中の履歴を一括削除することを確認",
+                            )
+                            design_history_bulk_delete = gr.Button("表示中の履歴を一括削除", variant="stop", size="sm")
                             design_history_status = gr.Markdown("")
                             with gr.Accordion("履歴メモ", open=False):
                                 gr.Markdown("選択中の声に評価・タグ・メモを付けます。WAVの横にJSONとして保存されます。")
@@ -3598,10 +3711,32 @@ def create_demo_interface(demo: VoxCPMDemo):
                     api_name="qwen3_design_candidates",
                 )
                 design_history_refresh.click(
-                    fn=_refresh_voice_design_history,
-                    inputs=[],
-                    outputs=[design_history],
+                    fn=_apply_voice_history_filter,
+                    inputs=[design_history_search, design_history_sort],
+                    outputs=[
+                        design_history,
+                        design_history_filtered_paths,
+                        design_history_rating,
+                        design_history_tags,
+                        design_history_memo,
+                        design_history_status,
+                    ],
                     show_progress=False,
+                )
+                design_history_filter.click(
+                    fn=_apply_voice_history_filter,
+                    inputs=[design_history_search, design_history_sort],
+                    outputs=[
+                        design_history,
+                        design_history_filtered_paths,
+                        design_history_rating,
+                        design_history_tags,
+                        design_history_memo,
+                        design_history_status,
+                    ],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
                 )
                 design_history.change(
                     fn=_load_voice_history_metadata,
@@ -3623,13 +3758,37 @@ def create_demo_interface(demo: VoxCPMDemo):
                         design_history_rating,
                         design_history_tags,
                         design_history_memo,
+                        design_history_search,
+                        design_history_sort,
                     ],
                     outputs=[
                         design_history,
+                        design_history_filtered_paths,
                         design_history_rating,
                         design_history_tags,
                         design_history_memo,
                         design_history_status,
+                    ],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
+                )
+                design_history_bulk_delete.click(
+                    fn=_bulk_delete_filtered_voice_history,
+                    inputs=[
+                        design_history_filtered_paths,
+                        design_history_bulk_confirm,
+                        design_history_search,
+                        design_history_sort,
+                    ],
+                    outputs=[
+                        design_history,
+                        design_history_filtered_paths,
+                        design_history_rating,
+                        design_history_tags,
+                        design_history_memo,
+                        design_history_status,
+                        design_history_bulk_confirm,
                     ],
                     show_progress=False,
                     api_name=None,
