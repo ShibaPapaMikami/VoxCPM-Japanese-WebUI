@@ -1388,7 +1388,10 @@ class VoxCPMDemo:
 def create_demo_interface(demo: VoxCPMDemo):
     gr.set_static_paths(paths=[Path.cwd().absolute() / "assets"])
     settings_path = Path.cwd() / ".jpvoxcpm_settings.json"
+    default_filename_template = "{prefix}_{name_or_datetime}_{id}"
     initial_output_dir = (Path.cwd() / "outputs").resolve()
+    initial_filename_template = default_filename_template
+    settings: dict = {}
     try:
         settings = json.loads(settings_path.read_text(encoding="utf-8"))
         saved_output_dir = (settings.get("output_dir") or "").strip()
@@ -1398,9 +1401,26 @@ def create_demo_interface(demo: VoxCPMDemo):
             if not saved_path.is_absolute():
                 saved_path = Path.cwd() / saved_path
             initial_output_dir = saved_path.resolve()
+        saved_filename_template = (settings.get("filename_template") or "").strip()
+        if saved_filename_template:
+            initial_filename_template = saved_filename_template
     except Exception:
         pass
     current_output_dir = {"path": initial_output_dir}
+    current_filename_template = {"template": initial_filename_template}
+
+    def _write_app_settings() -> None:
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "output_dir": str(current_output_dir["path"]),
+                    "filename_template": current_filename_template["template"],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
 
     def _voice_history_paths() -> list[Path]:
         output_dir = _output_dir(create=False)
@@ -1644,10 +1664,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             folder_text = str(output_dir)
             settings_message = ""
             try:
-                settings_path.write_text(
-                    json.dumps({"output_dir": folder_text}, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
+                _write_app_settings()
             except Exception as settings_error:
                 settings_message = f"\n\n設定ファイルへの保存はできませんでした: {settings_error}"
             history_update = _history_dropdown_update()
@@ -1716,6 +1733,60 @@ def create_demo_interface(demo: VoxCPMDemo):
         name = re.sub(r"[\\/:*?\"<>|]+", "_", name)
         name = re.sub(r"\s+", "_", name).strip("._ ")
         return name[:80]
+
+    def _render_wav_filename(prefix: str, filename_hint: str = "") -> str:
+        timestamp = datetime.now()
+        short_id = uuid4().hex[:8]
+        clean_prefix = _sanitize_filename(prefix) or "audio"
+        clean_name = _sanitize_filename(filename_hint)
+        values = {
+            "prefix": clean_prefix,
+            "name": clean_name,
+            "name_or_datetime": clean_name or timestamp.strftime("%Y%m%d_%H%M%S"),
+            "datetime": timestamp.strftime("%Y%m%d_%H%M%S"),
+            "date": timestamp.strftime("%Y%m%d"),
+            "time": timestamp.strftime("%H%M%S"),
+            "id": short_id,
+        }
+        template = (current_filename_template["template"] or default_filename_template).strip()
+        try:
+            rendered = template.format(**values)
+        except Exception:
+            rendered = default_filename_template.format(**values)
+        rendered = _sanitize_filename(rendered.removesuffix(".wav")) or default_filename_template.format(**values)
+        if not rendered.lower().endswith(".wav"):
+            rendered = f"{rendered}.wav"
+        return rendered
+
+    def _set_filename_template(template: str):
+        clean_template = (template or "").strip()
+        if not clean_template:
+            clean_template = default_filename_template
+        test_values = {
+            "prefix": "voice_design",
+            "name": "sample",
+            "name_or_datetime": "sample",
+            "datetime": "20260101_120000",
+            "date": "20260101",
+            "time": "120000",
+            "id": "abcd1234",
+        }
+        try:
+            old_template = current_filename_template["template"]
+            clean_template.format(**test_values)
+            current_filename_template["template"] = clean_template
+            preview_name = _render_wav_filename("voice_design", "sample")
+            _write_app_settings()
+            return (
+                gr.update(value=clean_template),
+                f"ファイル名テンプレートを保存しました。例: `{preview_name}`",
+            )
+        except Exception as e:
+            current_filename_template["template"] = old_template if "old_template" in locals() else default_filename_template
+            return (
+                gr.update(value=current_filename_template["template"]),
+                f"ファイル名テンプレートを保存できませんでした: {e}",
+            )
 
     def _read_corpus_file_text(corpus_file: Optional[str]) -> str:
         if not corpus_file:
@@ -2412,14 +2483,9 @@ def create_demo_interface(demo: VoxCPMDemo):
 
     def _save_wav_for_download(sr: int, wav_np: np.ndarray, prefix: str, filename_hint: str = "") -> str:
         output_dir = _output_dir()
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        custom_name = _sanitize_filename(filename_hint)
-        if custom_name:
-            output_path = output_dir / f"{prefix}_{custom_name}.wav"
-            if output_path.exists():
-                output_path = output_dir / f"{prefix}_{custom_name}_{timestamp}.wav"
-        else:
-            output_path = output_dir / f"{prefix}_{timestamp}_{uuid4().hex[:8]}.wav"
+        output_path = output_dir / _render_wav_filename(prefix, filename_hint)
+        if output_path.exists():
+            output_path = output_path.with_name(f"{output_path.stem}_{uuid4().hex[:8]}{output_path.suffix}")
         processing_utils.audio_to_file(sr, np.asarray(wav_np), str(output_path), format="wav")
         logger.info(f"Saved generated WAV for download: {output_path}")
         return str(output_path)
@@ -3468,6 +3534,13 @@ def create_demo_interface(demo: VoxCPMDemo):
             with gr.Row():
                 output_dir_apply = gr.Button("保存先を変更", variant="secondary")
                 output_dir_open = gr.Button("フォルダを開く", variant="secondary")
+            filename_template_global = gr.Textbox(
+                value=current_filename_template["template"],
+                label="WAV出力名テンプレート",
+                info="使える項目: {prefix}, {name}, {name_or_datetime}, {datetime}, {date}, {time}, {id}",
+                lines=1,
+            )
+            filename_template_apply = gr.Button("テンプレートを保存", variant="secondary")
             output_dir_status = gr.Markdown("")
 
         with gr.Tabs():
@@ -4504,6 +4577,14 @@ def create_demo_interface(demo: VoxCPMDemo):
             fn=_open_output_dir,
             inputs=[output_dir_global],
             outputs=[output_dir_status],
+            show_progress=False,
+            api_name=None,
+            api_visibility="private",
+        )
+        filename_template_apply.click(
+            fn=_set_filename_template,
+            inputs=[filename_template_global],
+            outputs=[filename_template_global, output_dir_status],
             show_progress=False,
             api_name=None,
             api_visibility="private",
