@@ -2710,6 +2710,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         voxcpm_only = gr.update(visible=not is_irodori and not is_qwen3)
         irodori_only = gr.update(visible=is_irodori)
         qwen3_only = gr.update(visible=is_qwen3)
+        language_update = gr.update(visible=False, value="日本語") if is_irodori else gr.update(visible=True)
         not_irodori = gr.update(visible=not is_irodori)
         supported_hifi = gr.update(visible=not is_irodori and not is_qwen3)
         unsupported_hifi = gr.update(visible=is_irodori or is_qwen3)
@@ -2717,6 +2718,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             _app_header_html(engine_label),
             _engine_status(engine_label),
             not_irodori,
+            irodori_only,
+            language_update,
             gr.update(visible=True),
             not_irodori,
             not_irodori,
@@ -2731,7 +2734,9 @@ def create_demo_interface(demo: VoxCPMDemo):
             qwen3_only,
             qwen3_only,
             qwen3_only,
+            language_update,
             not_irodori,
+            irodori_only,
             voxcpm_only,
             voxcpm_only,
             voxcpm_only,
@@ -2749,11 +2754,18 @@ def create_demo_interface(demo: VoxCPMDemo):
             const isQwen3 = label.startsWith("VoiceDesignCloner連携") || label.startsWith("Qwen3-TTS");
             const hideHifi = isIrodori || isQwen3;
             const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
-            const hifiTab = tabs.find((tab) => (tab.textContent || "").includes("高精度クローン"));
-            if (!hifiTab) return;
-            hifiTab.style.display = hideHifi ? "none" : "";
-            hifiTab.setAttribute("aria-hidden", hideHifi ? "true" : "false");
-            if (hideHifi && hifiTab.getAttribute("aria-selected") === "true") {
+            const hifiTabs = tabs.filter((tab) => (tab.textContent || "").includes("高精度クローン"));
+            hifiTabs.forEach((tab) => {
+                tab.style.display = hideHifi ? "none" : "";
+                tab.setAttribute("aria-hidden", hideHifi ? "true" : "false");
+                const tabPanelId = tab.getAttribute("aria-controls");
+                const tabPanel = tabPanelId ? document.getElementById(tabPanelId) : null;
+                if (tabPanel) {
+                    tabPanel.style.display = hideHifi ? "none" : "";
+                    tabPanel.setAttribute("aria-hidden", hideHifi ? "true" : "false");
+                }
+            });
+            if (hideHifi && hifiTabs.some((tab) => tab.getAttribute("aria-selected") === "true")) {
                 const fallbackTab =
                     tabs.find((tab) => (tab.textContent || "").includes("声のクローン")) ||
                     tabs.find((tab) => (tab.textContent || "").includes("声のデザイン"));
@@ -3741,9 +3753,14 @@ def create_demo_interface(demo: VoxCPMDemo):
 
         with gr.Tabs():
             with gr.Tab("声のデザイン") as design_tab:
-                gr.Markdown(
+                design_intro = gr.Markdown(
                     "参照音声を使わず、声の雰囲気を文章で指定して新しい声を作ります。"
                     "男性声・女性声・話す速さなどの日本語指定は、内部でモデル向けの声質タグに補強されます。"
+                )
+                design_irodori_notice = gr.Markdown(
+                    "Irodori-TTSは日本語専用です。発話言語、アクセント記号、話し方の抑揚、詳細ステップ設定は隠し、"
+                    "年齢・性別・特徴、LoRAアダプタ、読み上げテキストだけで生成します。",
+                    visible=False,
                 )
                 with gr.Row():
                     with gr.Column():
@@ -3866,7 +3883,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 design_gacha_file_4 = gr.File(label="候補 4 WAV", interactive=False, visible=False)
                         gr.Markdown(
                             "**使い方**\n\n"
-                            "1. 声の指示に、声質や話し方を書きます。\n"
+                            "1. 表示されている項目で、声質や話し方を指定します。\n"
                             "2. 読み上げたい文章を入力します。\n"
                             "3. 表示されている生成ボタンを押します。"
                         )
@@ -4141,7 +4158,12 @@ def create_demo_interface(demo: VoxCPMDemo):
                 )
 
             with gr.Tab("声のクローン") as clone_tab:
-                gr.Markdown("参照音声の声質をもとに、別の文章を読み上げます。選択中のエンジンに必要な追加項目だけを表示します。")
+                clone_intro = gr.Markdown("参照音声の声質をもとに、別の文章を読み上げます。選択中のエンジンに必要な追加項目だけを表示します。")
+                clone_irodori_notice = gr.Markdown(
+                    "Irodori-TTSでは参照音声を優先し、日本語テキストを生成します。"
+                    "多言語、記号による読み方調整、詳細ステップ設定、Qwen3向け文字起こし欄は非表示にしています。",
+                    visible=False,
+                )
                 with gr.Row():
                     with gr.Column():
                         clone_ref = gr.Audio(
@@ -4893,6 +4915,8 @@ def create_demo_interface(demo: VoxCPMDemo):
         engine_visibility_outputs = [
             app_header,
             engine_status,
+            design_intro,
+            design_irodori_notice,
             design_language,
             design_voice_age_gender_row,
             design_control,
@@ -4909,6 +4933,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             clone_qwen3_corpus_group,
             clone_qwen3_corpus_result_group,
             clone_language,
+            clone_intro,
+            clone_irodori_notice,
             clone_control,
             clone_word_accent_group,
             clone_prosody_group,
