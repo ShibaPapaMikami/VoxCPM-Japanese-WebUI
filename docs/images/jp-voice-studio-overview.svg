@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" role="img" aria-labelledby="title desc">
+  <title id="title">JP Voice Studio Web UI overview</title>
+  <desc id="desc">A simplified screenshot-style overview of the JP Voice Studio web interface with engine selection, voice design controls, and generated audio output.</desc>
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f8fbff"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#102033" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <rect width="1280" height="760" fill="#f4f7fb"/>
+
+  <rect x="64" y="48" width="1152" height="116" rx="10" fill="#ffffff" stroke="#dbe5f2" filter="url(#softShadow)"/>
+  <circle cx="120" cy="106" r="35" fill="#0f172a"/>
+  <path d="M91 106h35l15-33 27 66 18-33h31" fill="none" stroke="#5eead4" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M91 106h35l15-33 27 66" fill="none" stroke="#facc15" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="176" y="98" fill="#152236" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="700">JP Voice Studio</text>
+  <text x="176" y="132" fill="#64748b" font-family="Segoe UI, Arial, sans-serif" font-size="18">日本語音声生成・声クローン統合ツール</text>
+  <rect x="936" y="82" width="220" height="48" rx="24" fill="#f8fafc" stroke="#d8e2ef"/>
+  <text x="966" y="113" fill="#334155" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="600">使用中: VoxCPM2</text>
+
+  <text x="72" y="208" fill="#0f172a" font-family="Segoe UI, Arial, sans-serif" font-size="25" font-weight="700">用途に合わせてモードを選択</text>
+  <text x="72" y="235" fill="#64748b" font-family="Segoe UI, Arial, sans-serif" font-size="17">必要な入力だけを表示し、任意エンジンはセットアップ案内も表示します。</text>
+
+  <rect x="64" y="270" width="360" height="420" rx="10" fill="url(#panel)" stroke="#dbe5f2"/>
+  <text x="92" y="314" fill="#1e293b" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700">音声エンジン</text>
+  <rect x="92" y="340" width="270" height="48" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="116" y="370" fill="#1d4ed8" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">VoxCPM2（総合）</text>
+  <rect x="92" y="398" width="270" height="48" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="116" y="428" fill="#334155" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="600">Irodori-TTS</text>
+  <rect x="92" y="456" width="270" height="58" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="116" y="482" fill="#334155" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="600">VoiceDesignCloner連携</text>
+  <text x="116" y="503" fill="#64748b" font-family="Segoe UI, Arial, sans-serif" font-size="14">Qwen3-TTS・簡易</text>
+  <line x1="92" y1="548" x2="362" y2="548" stroke="#e2e8f0"/>
+  <text x="92" y="586" fill="#1e293b" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="700">保存先フォルダ</text>
+  <rect x="92" y="604" width="270" height="42" rx="7" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="112" y="631" fill="#475569" font-family="Consolas, monospace" font-size="14">outputs</text>
+
+  <rect x="452" y="270" width="392" height="420" rx="10" fill="#ffffff" stroke="#dbe5f2"/>
+  <text x="480" y="314" fill="#1e293b" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">声のデザイン</text>
+  <text x="480" y="344" fill="#64748b" font-family="Segoe UI, Arial, sans-serif" font-size="15">声質、話し方、読み上げテキストを入力します。</text>
+  <text x="480" y="388" fill="#2563eb" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700">声の指示</text>
+  <rect x="480" y="402" width="328" height="76" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="500" y="431" fill="#334155" font-family="Segoe UI, Arial, sans-serif" font-size="16">落ち着いた日本語の男性</text>
+  <text x="500" y="455" fill="#334155" font-family="Segoe UI, Arial, sans-serif" font-size="16">ナレーション</text>
+  <text x="480" y="516" fill="#2563eb" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700">読み上げテキスト</text>
+  <rect x="480" y="530" width="328" height="82" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="500" y="560" fill="#334155" font-family="Segoe UI, Arial, sans-serif" font-size="16">今日は音声生成の動作確認を</text>
+  <text x="500" y="584" fill="#334155" font-family="Segoe UI, Arial, sans-serif" font-size="16">しています。</text>
+  <rect x="480" y="632" width="180" height="44" rx="8" fill="#2563eb"/>
+  <text x="514" y="660" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">この声を生成</text>
+
+  <rect x="872" y="270" width="344" height="420" rx="10" fill="#ffffff" stroke="#dbe5f2"/>
+  <text x="900" y="314" fill="#1e293b" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">生成された音声</text>
+  <rect x="900" y="346" width="288" height="118" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <path d="M924 407h14m8 0h2m8-17v34m10-22v10m12-30v50m13-18v14m12-28v42m14-24v20m12-44v60m16-38v30m14-15v12m15-34v50m16-20v18m14-46v68m16-34v32m16-16v14m16-36v48m16-30v26m16-44v58m16-36v26m14-12h10" fill="none" stroke="#f97316" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="1020" cy="516" r="22" fill="#94a3b8"/>
+  <polygon points="1014,502 1014,530 1036,516" fill="#ffffff"/>
+  <rect x="900" y="572" width="288" height="48" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="926" y="603" fill="#2563eb" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">WAVダウンロード</text>
+  <text x="900" y="652" fill="#64748b" font-family="Segoe UI, Arial, sans-serif" font-size="15">履歴から同じ声で別セリフも生成できます。</text>
+</svg>
