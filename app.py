@@ -3093,6 +3093,38 @@ def create_demo_interface(demo: VoxCPMDemo):
             status,
         )
 
+    def _format_bytes(size: int) -> str:
+        value = float(size)
+        for unit in ("B", "KB", "MB", "GB"):
+            if value < 1024 or unit == "GB":
+                return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
+            value /= 1024
+        return f"{value:.1f} GB"
+
+    def _qwen3_candidate_summary(generated: list[tuple[Tuple[int, np.ndarray], str]]) -> str:
+        if not generated:
+            return "候補はまだ生成されていません。"
+        lines = [
+            f"**生成候補の比較一覧（{len(generated)}件）**",
+            "",
+            "| 候補 | 長さ | サイズ | ファイル名 | 使い方 |",
+            "|---|---:|---:|---|---|",
+        ]
+        for index, (audio, output_path) in enumerate(generated, start=1):
+            sr, wav_np = audio
+            duration = (len(wav_np) / float(sr)) if sr else 0.0
+            path = Path(output_path)
+            size_text = _format_bytes(path.stat().st_size) if path.is_file() else "未確認"
+            usage = "メイン表示中 / 履歴から再利用可" if index == 1 else "下の音声欄で確認 / 履歴から再利用可"
+            lines.append(f"| 候補{index} | {duration:.1f}秒 | {size_text} | `{path.name}` | {usage} |")
+        lines.extend(
+            [
+                "",
+                "気に入った候補は、声のデザイン履歴から別セリフ生成や声のクローンに使えます。",
+            ]
+        )
+        return "\n".join(lines)
+
     def _generate_qwen3_design_candidates(
         engine_label: str,
         text: str,
@@ -3145,20 +3177,18 @@ def create_demo_interface(demo: VoxCPMDemo):
         for index in range(4):
             if count > 1 and index < len(generated):
                 audio, output_path = generated[index]
-                audio_updates.append(gr.update(value=audio, visible=True))
-                file_updates.append(gr.update(value=output_path, visible=True))
+                duration = (len(audio[1]) / float(audio[0])) if audio[0] else 0.0
+                audio_updates.append(gr.update(value=audio, visible=True, label=f"候補 {index + 1}（{duration:.1f}秒）"))
+                file_updates.append(gr.update(value=output_path, visible=True, label=f"候補 {index + 1} WAV"))
             else:
                 audio_updates.append(gr.update(value=None, visible=False))
                 file_updates.append(gr.update(value=None, visible=False))
 
         main_audio, main_path = generated[0]
         if count == 1:
-            status = "1件生成しました。生成されたWAVは履歴から再利用できます。"
+            status = _qwen3_candidate_summary(generated)
         else:
-            status = (
-                f"{count}件の候補を生成しました。上の「生成された音声」には候補1を表示しています。"
-                "気に入った候補はWAVを確認し、履歴から別セリフ生成や声のクローンに使えます。"
-            )
+            status = _qwen3_candidate_summary(generated)
         return (
             main_audio,
             main_path,
@@ -4040,6 +4070,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                             with gr.Accordion("生成候補", open=True):
                                 gr.Markdown(
                                     "生成数を2以上にした場合、候補がここに並びます。"
+                                    "比較一覧で長さ・サイズ・ファイル名を確認できます。"
                                     "生成数が1の場合は上の「生成された音声」だけを使います。"
                                 )
                                 design_gacha_status = gr.Markdown("")
