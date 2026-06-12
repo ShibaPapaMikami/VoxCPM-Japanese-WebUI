@@ -586,6 +586,25 @@ _ENGINE_LABELS = [_ENGINE_VOXCPM, _ENGINE_IRODORI, _ENGINE_QWEN3]
 
 # ---------- Model ----------
 
+def _with_next_action(
+    message: str,
+    *,
+    button: str = "",
+    command: str = "",
+    after: str = "",
+) -> str:
+    lines = [(message or "").strip()]
+    actions = []
+    if button:
+        actions.append(f"- 画面: {button}")
+    if command:
+        actions.append(f"- コマンド: `{command}`")
+    if after:
+        actions.append(f"- その後: {after}")
+    if actions:
+        lines.extend(["", "次にすること:", *actions])
+    return "\n".join(line for line in lines if line != "")
+
 def _has_any(text: str, keywords: tuple[str, ...]) -> bool:
     return any(keyword in text for keyword in keywords)
 
@@ -679,7 +698,12 @@ def _engine_is_qwen3(engine_label: str) -> bool:
 
 def _ensure_irodori_japanese(target_language: str) -> None:
     if target_language and target_language not in ("自動（テキストから判定）", "日本語"):
-        raise ValueError("Irodori-TTSは日本語専用です。発話言語を日本語または自動にしてください。")
+        raise ValueError(
+            _with_next_action(
+                "Irodori-TTSは日本語専用です。発話言語を日本語または自動にしてください。",
+                button="発話言語で「日本語」または「自動（テキストから判定）」を選び直してください。",
+            )
+        )
 
 
 def _qwen3_language_name(target_language: str) -> str:
@@ -701,8 +725,10 @@ def _qwen3_language_name(target_language: str) -> str:
     qwen_language = language_map.get(language_name)
     if not qwen_language:
         raise ValueError(
-            "Qwen3-TTSで選べる発話言語は、日本語・英語・中国語・韓国語・ドイツ語・"
-            "フランス語・スペイン語・イタリア語・ポルトガル語・ロシア語です。"
+            _with_next_action(
+                "Qwen3-TTSで選べる発話言語は、日本語・英語・中国語・韓国語・ドイツ語・フランス語・スペイン語・イタリア語・ポルトガル語・ロシア語です。",
+                button="発話言語をQwen3-TTS対応言語のいずれかに選び直してください。",
+            )
         )
     return qwen_language
 
@@ -1003,16 +1029,18 @@ class VoxCPMDemo:
 
     @staticmethod
     def irodori_setup_message() -> str:
-        return (
-            "Irodori-TTSは未セットアップです。\n"
-            "次に実行: `powershell -ExecutionPolicy Bypass -File scripts\\setup_irodori_tts.ps1`"
+        return _with_next_action(
+            "Irodori-TTSは未セットアップです。",
+            command="powershell -ExecutionPolicy Bypass -File scripts\\setup_irodori_tts.ps1",
+            after="Web UIを再起動し、画面上部の音声エンジンで「Irodori-TTS（日本語特化・実験）」を選んでください。",
         )
 
     @staticmethod
     def qwen3_setup_message() -> str:
-        return (
-            "Qwen3-TTSは未セットアップです。\n"
-            "次に実行: `powershell -ExecutionPolicy Bypass -File scripts\\setup_qwen3_tts.ps1`"
+        return _with_next_action(
+            "Qwen3-TTSは未セットアップです。",
+            command="powershell -ExecutionPolicy Bypass -File scripts\\setup_qwen3_tts.ps1",
+            after="Web UIを再起動し、画面上部の音声エンジンで「VoiceDesignCloner連携（Qwen3-TTS・簡易）」を選んでください。",
         )
 
     @staticmethod
@@ -1052,13 +1080,18 @@ class VoxCPMDemo:
         if not project_dir.exists():
             return self.irodori_setup_message()
         if not (project_dir / "infer.py").exists():
-            return (
+            return _with_next_action(
                 "Irodori-TTSのファイルが不足しています。\n"
-                f"確認先: `{project_dir}`\n"
-                "次に実行: `powershell -ExecutionPolicy Bypass -File scripts\\setup_irodori_tts.ps1`"
+                f"確認先: `{project_dir}`",
+                command="powershell -ExecutionPolicy Bypass -File scripts\\setup_irodori_tts.ps1",
+                after="セットアップ後にWeb UIを再起動してください。",
             )
         if shutil.which("uv") is None:
-            return "uvが見つかりません。\n次に実行: `winget install --id Astral-sh.UV`"
+            return _with_next_action(
+                "uvが見つかりません。",
+                command="winget install --id Astral-sh.UV",
+                after="PowerShellを開き直してから、Irodori-TTSのセットアップを再実行してください。",
+            )
         return (
             "Irodori-TTSを使用します。日本語に特化した音声生成・参照音声クローンに対応しています。"
             "多言語発話、VoxCPM2の高精度クローン、自由文による細かな声の指示は未対応です。"
@@ -1076,14 +1109,20 @@ class VoxCPMDemo:
     ) -> Tuple[int, np.ndarray]:
         text = (text_input or "").strip()
         if not text:
-            raise ValueError("読み上げテキストを入力してください。")
+            raise ValueError(_with_next_action("読み上げテキストを入力してください。", button="読み上げテキスト欄に文章を入力し、もう一度生成ボタンを押してください。"))
 
         project_dir = self.irodori_project_dir()
         infer_py = project_dir / "infer.py"
         if not infer_py.exists():
             raise RuntimeError(self.irodori_setup_message())
         if shutil.which("uv") is None:
-            raise RuntimeError("uvが見つかりません。\n次に実行: `winget install --id Astral-sh.UV`")
+            raise RuntimeError(
+                _with_next_action(
+                    "uvが見つかりません。",
+                    command="winget install --id Astral-sh.UV",
+                    after="PowerShellを開き直してから、Irodori-TTSのセットアップを再実行してください。",
+                )
+            )
         python_path = self.irodori_python_path()
 
         output_path = Path(output_wav_path)
@@ -1130,17 +1169,31 @@ class VoxCPMDemo:
         )
         if result.returncode != 0:
             detail = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
-            raise RuntimeError(f"Irodori-TTSの生成に失敗しました。\n{detail[-1200:]}")
+            raise RuntimeError(
+                _with_next_action(
+                    f"Irodori-TTSの生成に失敗しました。\n{detail[-1200:]}",
+                    button="音声エンジンの案内文と、参照音声・読み上げテキスト・LoRA選択を確認してください。",
+                    command="powershell -ExecutionPolicy Bypass -File scripts\\check_setup.ps1",
+                )
+            )
         if not output_path.exists():
-            raise RuntimeError("Irodori-TTSの生成は完了しましたが、出力WAVが見つかりませんでした。")
+            raise RuntimeError(
+                _with_next_action(
+                    "Irodori-TTSの生成は完了しましたが、出力WAVが見つかりませんでした。",
+                    button="保存先フォルダを開き、出力先に書き込みできるか確認してください。",
+                    command="powershell -ExecutionPolicy Bypass -File scripts\\check_setup.ps1",
+                )
+            )
         return processing_utils.audio_from_file(str(output_path))
 
     def qwen3_status(self) -> str:
         wrapper_path = Path.cwd() / "scripts" / "run_qwen3_tts_infer.py"
         if not wrapper_path.exists():
-            return (
+            return _with_next_action(
                 "Qwen3-TTS実行ファイルが見つかりません。\n"
-                f"確認先: `{wrapper_path}`"
+                f"確認先: `{wrapper_path}`",
+                command="powershell -ExecutionPolicy Bypass -File scripts\\setup_qwen3_tts.ps1",
+                after="セットアップ後にWeb UIを再起動してください。",
             )
         if not self.qwen3_package_available():
             return self.qwen3_setup_message()
@@ -1165,13 +1218,24 @@ class VoxCPMDemo:
     ) -> Tuple[int, np.ndarray]:
         text = (text_input or "").strip()
         if not text:
-            raise ValueError("読み上げテキストを入力してください。")
+            raise ValueError(_with_next_action("読み上げテキストを入力してください。", button="読み上げテキスト欄に文章を入力し、もう一度生成ボタンを押してください。"))
         if mode == "clone" and not (reference_text_input or "").strip():
-            raise ValueError("Qwen3-TTSの声のクローンには、参照音声の文字起こしが必要です。")
+            raise ValueError(
+                _with_next_action(
+                    "Qwen3-TTSの声のクローンには、参照音声の文字起こしが必要です。",
+                    button="声のクローンタブの「参照音声の文字起こし（Qwen3-TTS用）」に、参照音声で実際に話している内容を入力してください。",
+                )
+            )
 
         wrapper_path = Path.cwd() / "scripts" / "run_qwen3_tts_infer.py"
         if not wrapper_path.exists():
-            raise RuntimeError(f"Qwen3-TTS実行ファイルが見つかりません。\n確認先: `{wrapper_path}`")
+            raise RuntimeError(
+                _with_next_action(
+                    f"Qwen3-TTS実行ファイルが見つかりません。\n確認先: `{wrapper_path}`",
+                    command="powershell -ExecutionPolicy Bypass -File scripts\\setup_qwen3_tts.ps1",
+                    after="セットアップ後にWeb UIを再起動してください。",
+                )
+            )
         if not self.qwen3_package_available():
             raise RuntimeError(self.qwen3_setup_message())
 
@@ -1219,9 +1283,21 @@ class VoxCPMDemo:
         )
         if result.returncode != 0:
             detail = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
-            raise RuntimeError(f"Qwen3-TTSの生成に失敗しました。\n{detail[-1200:]}")
+            raise RuntimeError(
+                _with_next_action(
+                    f"Qwen3-TTSの生成に失敗しました。\n{detail[-1200:]}",
+                    button="音声エンジンを「VoiceDesignCloner連携」にして、参照音声・文字起こし・発話言語を確認してください。",
+                    command="powershell -ExecutionPolicy Bypass -File scripts\\check_setup.ps1",
+                )
+            )
         if not output_path.exists():
-            raise RuntimeError("Qwen3-TTSの生成は完了しましたが、出力WAVが見つかりませんでした。")
+            raise RuntimeError(
+                _with_next_action(
+                    "Qwen3-TTSの生成は完了しましたが、出力WAVが見つかりませんでした。",
+                    button="保存先フォルダを開き、出力先に書き込みできるか確認してください。",
+                    command="powershell -ExecutionPolicy Bypass -File scripts\\check_setup.ps1",
+                )
+            )
         return processing_utils.audio_from_file(str(output_path))
 
     def generate_qwen3_corpus(
@@ -1236,13 +1312,29 @@ class VoxCPMDemo:
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
     ) -> tuple[str, str, str]:
         if not reference_wav_path_input:
-            raise ValueError("コーパス一括音声化には参照音声が必要です。")
+            raise ValueError(
+                _with_next_action(
+                    "コーパス一括音声化には参照音声が必要です。",
+                    button="声のクローンタブで参照音声をアップロードするか、声のデザイン履歴から選んでください。",
+                )
+            )
         if not (reference_text_input or "").strip():
-            raise ValueError("コーパス一括音声化には参照音声の文字起こしが必要です。")
+            raise ValueError(
+                _with_next_action(
+                    "コーパス一括音声化には参照音声の文字起こしが必要です。",
+                    button="「参照音声の文字起こし（Qwen3-TTS用）」に、参照音声で実際に話している内容を入力してください。",
+                )
+            )
 
         wrapper_path = Path.cwd() / "scripts" / "run_qwen3_tts_infer.py"
         if not wrapper_path.exists():
-            raise RuntimeError(f"Qwen3-TTS実行ファイルが見つかりません。\n確認先: `{wrapper_path}`")
+            raise RuntimeError(
+                _with_next_action(
+                    f"Qwen3-TTS実行ファイルが見つかりません。\n確認先: `{wrapper_path}`",
+                    command="powershell -ExecutionPolicy Bypass -File scripts\\setup_qwen3_tts.ps1",
+                    after="セットアップ後にWeb UIを再起動してください。",
+                )
+            )
         if not self.qwen3_package_available():
             raise RuntimeError(self.qwen3_setup_message())
 
@@ -1308,7 +1400,12 @@ class VoxCPMDemo:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 process.kill()
-                raise RuntimeError("Qwen3-TTSのコーパス一括音声化がタイムアウトしました。")
+                raise RuntimeError(
+                    _with_next_action(
+                        "Qwen3-TTSのコーパス一括音声化がタイムアウトしました。",
+                        button="生成する文数を10文程度に減らし、再実行用TXTがある場合はそれを使ってください。",
+                    )
+                )
             try:
                 line = line_queue.get(timeout=min(0.5, remaining))
             except queue.Empty:
@@ -1326,12 +1423,23 @@ class VoxCPMDemo:
         process.wait(timeout=10)
         if process.returncode != 0:
             detail = "\n".join(output_lines).strip()
-            raise RuntimeError(f"Qwen3-TTSのコーパス一括音声化に失敗しました。\n{detail[-2000:]}")
+            raise RuntimeError(
+                _with_next_action(
+                    f"Qwen3-TTSのコーパス一括音声化に失敗しました。\n{detail[-2000:]}",
+                    button="失敗行が出力されている場合は「再実行用TXT（失敗行のみ）」をコーパスTXTとして指定してください。",
+                    command="powershell -ExecutionPolicy Bypass -File scripts\\check_setup.ps1",
+                )
+            )
 
         raw_dir = output_dir / "raw"
         text_list = output_dir / "Neutral.txt"
         if not raw_dir.exists() or not text_list.exists():
-            raise RuntimeError("コーパス生成は完了しましたが、rawフォルダまたはNeutral.txtが見つかりませんでした。")
+            raise RuntimeError(
+                _with_next_action(
+                    "コーパス生成は完了しましたが、rawフォルダまたはNeutral.txtが見つかりませんでした。",
+                    button="生成したコーパス出力フォルダを開き、rawフォルダとNeutral.txtの有無を確認してください。",
+                )
+            )
         return str(output_dir), str(raw_dir), str(text_list)
 
     def _build_generate_kwargs(
@@ -1376,7 +1484,7 @@ class VoxCPMDemo:
 
         text = (text_input or "").strip()
         if len(text) == 0:
-            raise ValueError("読み上げテキストを入力してください。")
+            raise ValueError(_with_next_action("読み上げテキストを入力してください。", button="読み上げテキスト欄に文章を入力し、もう一度生成ボタンを押してください。"))
 
         audio_path = reference_wav_path_input if reference_wav_path_input else None
         prompt_text_clean = _prepare_prompt_text_for_continuation(prompt_text, target_language) or None
@@ -1836,7 +1944,12 @@ def create_demo_interface(demo: VoxCPMDemo):
                 return ""
             return Path(file_path).read_text(encoding="utf-8-sig")
         except Exception as e:
-            raise RuntimeError(f"コーパスTXTを読み込めませんでした: {e}") from e
+            raise RuntimeError(
+                _with_next_action(
+                    f"コーパスTXTを読み込めませんでした: {e}",
+                    button="別のUTF-8形式のTXTを選ぶか、コーパス本文欄へ直接貼り付けてください。",
+                )
+            ) from e
 
     def _collect_corpus_lines(corpus_text: str, corpus_file: Optional[str], max_lines: int) -> list[str]:
         combined_text = "\n".join(
@@ -1844,7 +1957,12 @@ def create_demo_interface(demo: VoxCPMDemo):
         )
         lines = [line.strip() for line in combined_text.splitlines() if line.strip()]
         if not lines:
-            raise ValueError("コーパス本文を入力するか、TXTファイルをアップロードしてください。")
+            raise ValueError(
+                _with_next_action(
+                    "コーパス本文を入力するか、TXTファイルをアップロードしてください。",
+                    button="声のクローンタブの「コーパス本文（1行1文）」に入力するか、「コーパスTXT」を選んでください。",
+                )
+            )
         limit = int(max_lines or 0)
         if limit > 0:
             lines = lines[:limit]
@@ -1852,22 +1970,42 @@ def create_demo_interface(demo: VoxCPMDemo):
 
     def _resolve_corpus_output_folder(folder_path: str) -> Path:
         if not (folder_path or "").strip():
-            raise ValueError("コーパスフォルダを指定してください。")
+            raise ValueError(
+                _with_next_action(
+                    "コーパスフォルダを指定してください。",
+                    button="先に「コーパスを一括生成」を押すか、「前処理するコーパスフォルダ」に出力フォルダを貼り付けてください。",
+                )
+            )
         folder = Path(os.path.expandvars(os.path.expanduser(folder_path.strip())))
         if not folder.is_absolute():
             folder = _output_dir() / folder
         folder = folder.resolve()
         output_root = _output_dir().resolve()
         if folder != output_root and output_root not in folder.parents:
-            raise ValueError("現在の保存先フォルダ内のコーパスフォルダだけ処理できます。")
+            raise ValueError(
+                _with_next_action(
+                    "現在の保存先フォルダ内のコーパスフォルダだけ処理できます。",
+                    button="保存先フォルダ配下のコーパスフォルダを指定してください。",
+                )
+            )
         if not folder.is_dir():
-            raise ValueError(f"コーパスフォルダが見つかりません: {folder}")
+            raise ValueError(
+                _with_next_action(
+                    f"コーパスフォルダが見つかりません: {folder}",
+                    button="「コーパスを一括生成」を先に実行するか、正しいフォルダパスを貼り付けてください。",
+                )
+            )
         return folder
 
     def _load_corpus_text_map(base_dir: Path) -> dict[str, str]:
         text_file = base_dir / "Neutral.txt"
         if not text_file.exists():
-            raise ValueError(f"Neutral.txt が見つかりません: {text_file}")
+            raise ValueError(
+                _with_next_action(
+                    f"Neutral.txt が見つかりません: {text_file}",
+                    button="先に「コーパスを一括生成」を実行するか、生成済みのNeutral.txtがあるフォルダを指定してください。",
+                )
+            )
         text_map: dict[str, str] = {}
         lines = [line.strip() for line in text_file.read_text(encoding="utf-8").splitlines() if line.strip()]
         for index, line in enumerate(lines):
@@ -1887,7 +2025,12 @@ def create_demo_interface(demo: VoxCPMDemo):
             text_map[stem] = text
             text_map[f"{stem}.wav"] = text
         if not text_map:
-            raise ValueError("Neutral.txt に利用できる本文がありません。")
+            raise ValueError(
+                _with_next_action(
+                    "Neutral.txt に利用できる本文がありません。",
+                    button="コーパス本文を見直して、1行1文で再生成してください。",
+                )
+            )
         return text_map
 
     def _lora_lab_root() -> Path:
@@ -1899,10 +2042,20 @@ def create_demo_interface(demo: VoxCPMDemo):
         base_dir = _resolve_corpus_output_folder(folder_path)
         raw_dir = base_dir / "raw"
         if not raw_dir.is_dir():
-            raise ValueError(f"rawフォルダが見つかりません: {raw_dir}")
+            raise ValueError(
+                _with_next_action(
+                    f"rawフォルダが見つかりません: {raw_dir}",
+                    button="先に「コーパスを一括生成」を実行し、生成したフォルダを前処理対象にしてください。",
+                )
+            )
         wav_files = sorted(raw_dir.glob("*.wav"))
         if not wav_files:
-            raise ValueError("rawフォルダにWAVがありません。")
+            raise ValueError(
+                _with_next_action(
+                    "rawフォルダにWAVがありません。",
+                    button="「コーパスを一括生成」を実行し、成功件数が1件以上あることを確認してください。",
+                )
+            )
 
         import librosa
         import soundfile as sf
@@ -1924,10 +2077,20 @@ def create_demo_interface(demo: VoxCPMDemo):
         base_dir = _resolve_corpus_output_folder(folder_path)
         raw_dir = base_dir / "raw"
         if not raw_dir.is_dir():
-            raise ValueError(f"rawフォルダが見つかりません: {raw_dir}")
+            raise ValueError(
+                _with_next_action(
+                    f"rawフォルダが見つかりません: {raw_dir}",
+                    button="先に「コーパスを一括生成」を実行し、生成したフォルダを前処理対象にしてください。",
+                )
+            )
         wav_files = sorted(raw_dir.glob("*.wav"))
         if not wav_files:
-            raise ValueError("rawフォルダにWAVがありません。")
+            raise ValueError(
+                _with_next_action(
+                    "rawフォルダにWAVがありません。",
+                    button="「コーパスを一括生成」を実行し、成功件数が1件以上あることを確認してください。",
+                )
+            )
 
         text_map = _load_corpus_text_map(base_dir)
         speaker = _sanitize_filename(speaker_name) or _sanitize_filename(base_dir.name) or "speaker"
@@ -1941,7 +2104,12 @@ def create_demo_interface(demo: VoxCPMDemo):
                 continue
             esd_lines.append(f"{wav_path.name}|{speaker}|{lang}|{text}")
         if not esd_lines:
-            raise ValueError("raw/*.wav と Neutral.txt の対応が見つかりませんでした。")
+            raise ValueError(
+                _with_next_action(
+                    "raw/*.wav と Neutral.txt の対応が見つかりませんでした。",
+                    button="Neutral.txtとraw内WAVの番号が対応しているか確認し、必要ならコーパスを再生成してください。",
+                )
+            )
 
         esd_path = base_dir / "esd.list"
         esd_path.write_text("\n".join(esd_lines) + "\n", encoding="utf-8")
@@ -1960,13 +2128,23 @@ def create_demo_interface(demo: VoxCPMDemo):
         text_map = _load_corpus_text_map(base_dir)
         wav_folder = (wav_folder_name or "raw").strip()
         if wav_folder not in {"raw", "resampled"}:
-            raise ValueError("WAVフォルダは raw または resampled を選んでください。")
+            raise ValueError(_with_next_action("WAVフォルダは raw または resampled を選んでください。", button="学習に使うWAVフォルダで raw または resampled を選択してください。"))
         source_wav_dir = base_dir / wav_folder
         if not source_wav_dir.is_dir():
-            raise ValueError(f"{wav_folder}フォルダが見つかりません: {source_wav_dir}")
+            raise ValueError(
+                _with_next_action(
+                    f"{wav_folder}フォルダが見つかりません: {source_wav_dir}",
+                    button="resampledを選ぶ場合は、先に「rawをresampledへ変換」を実行してください。",
+                )
+            )
         wav_files = sorted(source_wav_dir.glob("*.wav"))
         if not wav_files:
-            raise ValueError(f"{wav_folder}フォルダにWAVがありません。")
+            raise ValueError(
+                _with_next_action(
+                    f"{wav_folder}フォルダにWAVがありません。",
+                    button="コーパス生成またはリサンプルを先に実行し、WAVが作成されているか確認してください。",
+                )
+            )
 
         speaker = _sanitize_filename(speaker_name) or _sanitize_filename(base_dir.name) or "speaker"
         emotion = _sanitize_filename(emotion_name) or "Neutral"
@@ -2000,7 +2178,12 @@ def create_demo_interface(demo: VoxCPMDemo):
             )
 
         if not txt_lines:
-            raise ValueError(f"{wav_folder}/*.wav と Neutral.txt の対応が見つかりませんでした。")
+            raise ValueError(
+                _with_next_action(
+                    f"{wav_folder}/*.wav と Neutral.txt の対応が見つかりませんでした。",
+                    button="Neutral.txtとWAV名の番号が対応しているか確認し、必要ならコーパスを再生成してください。",
+                )
+            )
 
         dest_dir.mkdir(parents=True, exist_ok=True)
         lab_text_path = dest_dir / f"{emotion}.txt"
@@ -2021,16 +2204,31 @@ def create_demo_interface(demo: VoxCPMDemo):
 
     def _resolve_lora_lab_dir(lab_dir_path: str) -> Path:
         if not (lab_dir_path or "").strip():
-            raise ValueError("学習するlabフォルダを指定してください。")
+            raise ValueError(
+                _with_next_action(
+                    "学習するlabフォルダを指定してください。",
+                    button="先に「1. LoRA学習データを準備」を押すか、「学習するlabフォルダ」にlabフォルダを貼り付けてください。",
+                )
+            )
         lab_dir = Path(os.path.expandvars(os.path.expanduser(lab_dir_path.strip())))
         if not lab_dir.is_absolute():
             lab_dir = _lora_lab_root() / lab_dir
         lab_dir = lab_dir.resolve()
         lab_root = _lora_lab_root().resolve()
         if lab_root not in lab_dir.parents:
-            raise ValueError("現在の保存先フォルダ内の lora_data/lab 配下だけ学習できます。")
+            raise ValueError(
+                _with_next_action(
+                    "現在の保存先フォルダ内の lora_data/lab 配下だけ学習できます。",
+                    button="「1. LoRA学習データを準備」で作成したlabフォルダを指定してください。",
+                )
+            )
         if not lab_dir.is_dir():
-            raise ValueError(f"labフォルダが見つかりません: {lab_dir}")
+            raise ValueError(
+                _with_next_action(
+                    f"labフォルダが見つかりません: {lab_dir}",
+                    button="「1. LoRA学習データを準備」を押して、表示されたlabフォルダを使ってください。",
+                )
+            )
         return lab_dir
 
     def _write_lora_training_jsonl_from_lab(lab_dir: Path) -> tuple[str, str, Path]:
@@ -2039,9 +2237,19 @@ def create_demo_interface(demo: VoxCPMDemo):
         text_file = lab_dir / f"{emotion}.txt"
         wav_dir = lab_dir / "wavs"
         if not text_file.is_file():
-            raise ValueError(f"labテキストが見つかりません: {text_file}")
+            raise ValueError(
+                _with_next_action(
+                    f"labテキストが見つかりません: {text_file}",
+                    button="「1. LoRA学習データを準備」をもう一度実行してください。",
+                )
+            )
         if not wav_dir.is_dir():
-            raise ValueError(f"wavsフォルダが見つかりません: {wav_dir}")
+            raise ValueError(
+                _with_next_action(
+                    f"wavsフォルダが見つかりません: {wav_dir}",
+                    button="「1. LoRA学習データを準備」をもう一度実行してください。",
+                )
+            )
 
         rows = []
         for line in text_file.read_text(encoding="utf-8").splitlines():
@@ -2564,7 +2772,12 @@ def create_demo_interface(demo: VoxCPMDemo):
             logs.append("[事前チェック]")
             logs.extend(preflight_report.splitlines())
             if not dry_run and "実学習前に必ず直す項目:" in preflight_report:
-                raise RuntimeError("LoRA学習データに実学習前に直すべき項目があります。上の事前チェック結果を確認してください。")
+                raise RuntimeError(
+                    _with_next_action(
+                        "LoRA学習データに実学習前に直すべき項目があります。上の事前チェック結果を確認してください。",
+                        button="「学習データを事前チェック」の結果を見て、音声数・テキスト数・サンプリングレートを直してください。",
+                    )
+                )
             speaker, emotion, jsonl_path = _write_lora_training_jsonl_from_lab(lab_dir)
             speaker_for_log = speaker
             irodori_root = demo.irodori_project_dir()
@@ -2580,7 +2793,13 @@ def create_demo_interface(demo: VoxCPMDemo):
 
             for required in (irodori_python, encode_script, train_script, train_config):
                 if not required.exists():
-                    raise RuntimeError(f"必要なファイルが見つかりません: {required}")
+                    raise RuntimeError(
+                        _with_next_action(
+                            f"必要なファイルが見つかりません: {required}",
+                            command="powershell -ExecutionPolicy Bypass -File scripts\\setup_irodori_tts.ps1",
+                            after="セットアップ後にWeb UIを再起動し、ドライランからやり直してください。",
+                        )
+                    )
 
             encode_command = [
                 str(irodori_python),
@@ -2646,14 +2865,25 @@ def create_demo_interface(demo: VoxCPMDemo):
                 logs.append(line)
                 yield emit("latentエンコード中...")
             if not manifest_path.is_file():
-                raise RuntimeError(f"manifestが生成されませんでした: {manifest_path}")
+                raise RuntimeError(
+                    _with_next_action(
+                        f"manifestが生成されませんでした: {manifest_path}",
+                        button="「学習データを事前チェック」を押し、WAVとテキストの対応を確認してください。",
+                    )
+                )
 
             yield emit("初期チェックポイントを確認しています。")
             checkpoint_lines = list(_run_subprocess_lines(checkpoint_command, irodori_root))
             logs.extend(checkpoint_lines)
             init_checkpoint = checkpoint_lines[-1].strip() if checkpoint_lines else ""
             if not init_checkpoint or not Path(init_checkpoint).is_file():
-                raise RuntimeError("初期チェックポイントを取得できませんでした。")
+                raise RuntimeError(
+                    _with_next_action(
+                        "初期チェックポイントを取得できませんでした。",
+                        command="powershell -ExecutionPolicy Bypass -File scripts\\check_setup.ps1",
+                        after="Hugging Faceのモデル取得状態とネットワークを確認してから再実行してください。",
+                    )
+                )
 
             train_command = train_command_template.copy()
             train_command[train_command.index("<downloaded model.safetensors>")] = init_checkpoint
@@ -2688,7 +2918,12 @@ def create_demo_interface(demo: VoxCPMDemo):
                 logs.append(f"[ログ保存] {log_path}")
             except Exception as log_error:
                 logs.append(f"[ログ保存失敗] {log_error}")
-            yield emit(f"LoRA学習の準備または実行に失敗しました: {e}")
+            yield emit(
+                _with_next_action(
+                    f"LoRA学習の準備または実行に失敗しました: {e}",
+                    button="ログ欄の末尾を確認し、必要ならドライランをオンに戻してから再実行してください。",
+                )
+            )
 
     def _save_wav_for_download(sr: int, wav_np: np.ndarray, prefix: str, filename_hint: str = "") -> str:
         output_dir = _output_dir()
@@ -3331,7 +3566,12 @@ def create_demo_interface(demo: VoxCPMDemo):
             return uploaded_ref
         if history_ref:
             return history_ref
-        raise ValueError(f"{feature_label}には参照音声をアップロードするか、声のデザイン履歴から選んでください。")
+        raise ValueError(
+            _with_next_action(
+                f"{feature_label}には参照音声をアップロードするか、声のデザイン履歴から選んでください。",
+                button=f"{feature_label}の参照音声欄にWAVをアップロードするか、「声のデザイン履歴から選択」を選んでください。",
+            )
+        )
 
     def _generate_from_design_history(
         engine_label: str,
@@ -3345,7 +3585,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         dit_steps: int,
     ):
         if not history_wav:
-            raise ValueError("再利用する声を履歴から選んでください。")
+            raise ValueError(_with_next_action("再利用する声を履歴から選んでください。", button="声のデザイン履歴からWAVを選択し、「履歴の声で生成」を押してください。"))
         if _engine_is_irodori(engine_label):
             _ensure_irodori_japanese(target_language)
             return _generate_irodori_for_download(
@@ -3359,8 +3599,10 @@ def create_demo_interface(demo: VoxCPMDemo):
             reference_text = _read_reference_text_sidecar(history_wav)
             if not reference_text:
                 raise ValueError(
-                    "Qwen3-TTSで履歴の声を再利用するには、その履歴WAVの横に参照テキスト（.txt）が必要です。"
-                    "Qwen3-TTSで新しく声のデザインを生成してから再利用してください。"
+                    _with_next_action(
+                        "Qwen3-TTSで履歴の声を再利用するには、その履歴WAVの横に参照テキスト（.txt）が必要です。",
+                        button="Qwen3-TTSで新しく声のデザインを生成し、その履歴を選んでください。",
+                    )
                 )
             return _generate_qwen3_for_download(
                 mode="clone",
@@ -3425,12 +3667,16 @@ def create_demo_interface(demo: VoxCPMDemo):
             if not reference_text:
                 if ref_wav:
                     raise ValueError(
-                        "アップロードした参照音声を使う場合は、その音声で実際に話している内容を"
-                        "参照音声の文字起こし欄に入力してください。履歴の保存済み文字起こしは流用しません。"
+                        _with_next_action(
+                            "アップロードした参照音声を使う場合は、その音声で実際に話している内容を参照音声の文字起こし欄に入力してください。履歴の保存済み文字起こしは流用しません。",
+                            button="声のクローンタブの「参照音声の文字起こし（Qwen3-TTS用）」に入力してください。",
+                        )
                     )
                 raise ValueError(
-                    "Qwen3-TTSの声のクローンには、参照音声の文字起こしが必要です。"
-                    "参照音声で実際に話している内容を入力してください。"
+                    _with_next_action(
+                        "Qwen3-TTSの声のクローンには、参照音声の文字起こしが必要です。参照音声で実際に話している内容を入力してください。",
+                        button="「参照音声の文字起こし（Qwen3-TTS用）」に入力してから、「この声で生成」を押してください。",
+                    )
                 )
             return _generate_qwen3_for_download(
                 mode="clone",
@@ -3545,12 +3791,16 @@ def create_demo_interface(demo: VoxCPMDemo):
         if not reference_text:
             if ref_wav:
                 raise ValueError(
-                    "アップロードした参照音声でコーパスを生成する場合は、その音声で実際に話している内容を"
-                    "参照音声の文字起こし欄に入力してください。履歴の保存済み文字起こしは流用しません。"
+                    _with_next_action(
+                        "アップロードした参照音声でコーパスを生成する場合は、その音声で実際に話している内容を参照音声の文字起こし欄に入力してください。履歴の保存済み文字起こしは流用しません。",
+                        button="「参照音声の文字起こし（Qwen3-TTS用）」に入力してから、「コーパスを一括生成」を押してください。",
+                    )
                 )
             raise ValueError(
-                "Qwen3-TTSのコーパス一括音声化には、参照音声の文字起こしが必要です。"
-                "参照音声で実際に話している内容を入力してください。"
+                _with_next_action(
+                    "Qwen3-TTSのコーパス一括音声化には、参照音声の文字起こしが必要です。参照音声で実際に話している内容を入力してください。",
+                    button="「参照音声の文字起こし（Qwen3-TTS用）」に入力してから、「コーパスを一括生成」を押してください。",
+                )
             )
 
         lines = _collect_corpus_lines(corpus_text, corpus_file, max_lines)
@@ -3601,11 +3851,26 @@ def create_demo_interface(demo: VoxCPMDemo):
     ):
         ref_source = _resolve_reference_audio(ref_wav, history_wav, "高精度クローン")
         if _engine_is_irodori(engine_label):
-            raise ValueError("Irodori-TTSは高精度クローン（参照音声+文字起こしの連続生成）には未対応です。声のクローンタブでIrodori-TTSを使ってください。")
+            raise ValueError(
+                _with_next_action(
+                    "Irodori-TTSは高精度クローン（参照音声+文字起こしの連続生成）には未対応です。",
+                    button="「声のクローン」タブを開き、Irodori-TTSで参照音声を指定してください。",
+                )
+            )
         if _engine_is_qwen3(engine_label):
-            raise ValueError("Qwen3-TTSはこの高精度クローンタブには未対応です。声のクローンタブで参照音声と文字起こしを指定してください。")
+            raise ValueError(
+                _with_next_action(
+                    "Qwen3-TTSはこの高精度クローンタブには未対応です。",
+                    button="「声のクローン」タブを開き、参照音声と文字起こしを指定してください。",
+                )
+            )
         if not prevent_leading_mix and not (prompt_text_value or "").strip():
-            raise ValueError("文字起こしを使う場合は、参照音声の文字起こしが必要です。")
+            raise ValueError(
+                _with_next_action(
+                    "文字起こしを使う場合は、参照音声の文字起こしが必要です。",
+                    button="「参照音声の文字起こし」に入力するか、「冒頭の不要な言葉を防ぐ（推奨）」をオンに戻してください。",
+                )
+            )
         sr, wav_np = demo.generate_tts_audio(
             text_input=text,
             control_instruction="",

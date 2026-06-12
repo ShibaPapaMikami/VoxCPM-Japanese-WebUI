@@ -24,8 +24,24 @@ class OptionalEngineUITests(unittest.TestCase):
 
         self.assertIn("Irodori-TTSは未セットアップです", irodori_status)
         self.assertIn("scripts\\setup_irodori_tts.ps1", irodori_status)
+        self.assertIn("次にすること:", irodori_status)
         self.assertIn("Qwen3-TTSは未セットアップです", qwen3_status)
         self.assertIn("scripts\\setup_qwen3_tts.ps1", qwen3_status)
+        self.assertIn("次にすること:", qwen3_status)
+
+    def test_next_action_helper_formats_button_and_command(self) -> None:
+        message = app._with_next_action(
+            "テストエラーです。",
+            button="生成ボタンを押してください。",
+            command="powershell -ExecutionPolicy Bypass -File scripts\\check_setup.ps1",
+            after="Web UIを再起動してください。",
+        )
+
+        self.assertIn("テストエラーです。", message)
+        self.assertIn("次にすること:", message)
+        self.assertIn("- 画面: 生成ボタンを押してください。", message)
+        self.assertIn("- コマンド: `powershell -ExecutionPolicy Bypass -File scripts\\check_setup.ps1`", message)
+        self.assertIn("- その後: Web UIを再起動してください。", message)
 
     def test_ui_builds_when_optional_engines_are_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
