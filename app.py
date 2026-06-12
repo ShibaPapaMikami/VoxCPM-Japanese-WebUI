@@ -2680,6 +2680,68 @@ def create_demo_interface(demo: VoxCPMDemo):
             logger.warning("Failed to read reference text sidecar: %s", e)
         return ""
 
+    def _audio_duration_seconds(audio_path: Optional[str]) -> Optional[float]:
+        if not audio_path:
+            return None
+        try:
+            import soundfile as sf
+
+            info = sf.info(str(audio_path))
+            if info.samplerate:
+                return float(info.frames) / float(info.samplerate)
+        except Exception as e:
+            logger.debug("Failed to inspect audio duration: %s", e)
+        return None
+
+    def _effective_qwen3_reference_text(
+        ref_wav: Optional[str],
+        history_wav: Optional[str],
+        qwen3_ref_text: str,
+    ) -> str:
+        manual_text = (qwen3_ref_text or "").strip()
+        if manual_text:
+            return manual_text
+        if history_wav and not ref_wav:
+            return _read_reference_text_sidecar(history_wav)
+        return ""
+
+    def _qwen3_reference_preflight_notes(
+        ref_wav: Optional[str],
+        history_wav: Optional[str],
+        qwen3_ref_text: str,
+    ) -> tuple[list[str], list[str]]:
+        issues: list[str] = []
+        notes: list[str] = []
+        reference_text = _effective_qwen3_reference_text(ref_wav, history_wav, qwen3_ref_text)
+        if not reference_text:
+            issues.append("アップロード参照音声の文字起こし" if ref_wav else "参照音声の文字起こし")
+            return issues, notes
+
+        if ref_wav and history_wav and not (qwen3_ref_text or "").strip():
+            notes.append("アップロード音声を使う場合、履歴の保存済み文字起こしは使いません")
+        elif history_wav and not ref_wav and not (qwen3_ref_text or "").strip():
+            notes.append("履歴WAV横の保存済み文字起こしを使います")
+        elif history_wav and (qwen3_ref_text or "").strip():
+            notes.append("手入力の文字起こしを優先します")
+
+        ref_source = ref_wav or history_wav
+        duration = _audio_duration_seconds(ref_source)
+        if duration:
+            clean_chars = len(re.sub(r"\s+", "", reference_text))
+            ratio = clean_chars / max(duration, 0.1)
+            notes.append(f"参照音声 {duration:.1f}秒 / 文字起こし {clean_chars}文字")
+            if duration < 3.0:
+                notes.append("参照音声が短めです。5〜30秒程度が安定しやすいです")
+            if duration > 45.0:
+                notes.append("参照音声が長めです。必要部分だけに切ると安定しやすいです")
+            if ratio < 1.2:
+                notes.append("参照音声の長さに対して文字起こしが短すぎる可能性があります")
+            if ratio > 14.0:
+                notes.append("参照音声の長さに対して文字起こしが長すぎる可能性があります")
+        else:
+            notes.append("参照音声の長さを確認できませんでした")
+        return issues, notes
+
     def _prepare_irodori_reference_wav(reference_wav: Optional[str]) -> tuple[Optional[str], Optional[Path]]:
         if not reference_wav:
             return None, None
@@ -3320,8 +3382,13 @@ def create_demo_interface(demo: VoxCPMDemo):
                 lora_adapter=irodori_lora_adapter,
             )
         if _engine_is_qwen3(engine_label):
-            reference_text = (qwen3_ref_text or "").strip() or _read_reference_text_sidecar(history_wav)
+            reference_text = _effective_qwen3_reference_text(ref_wav, history_wav, qwen3_ref_text)
             if not reference_text:
+                if ref_wav:
+                    raise ValueError(
+                        "アップロードした参照音声を使う場合は、その音声で実際に話している内容を"
+                        "参照音声の文字起こし欄に入力してください。履歴の保存済み文字起こしは流用しません。"
+                    )
                 raise ValueError(
                     "Qwen3-TTSの声のクローンには、参照音声の文字起こしが必要です。"
                     "参照音声で実際に話している内容を入力してください。"
@@ -3371,8 +3438,13 @@ def create_demo_interface(demo: VoxCPMDemo):
             raise ValueError("コーパス一括音声化はVoiceDesignCloner連携（Qwen3-TTS・簡易）で利用できます。")
 
         ref_source = _resolve_reference_audio(ref_wav, history_wav, "コーパス一括音声化")
-        reference_text = (qwen3_ref_text or "").strip() or _read_reference_text_sidecar(history_wav)
+        reference_text = _effective_qwen3_reference_text(ref_wav, history_wav, qwen3_ref_text)
         if not reference_text:
+            if ref_wav:
+                raise ValueError(
+                    "アップロードした参照音声でコーパスを生成する場合は、その音声で実際に話している内容を"
+                    "参照音声の文字起こし欄に入力してください。履歴の保存済み文字起こしは流用しません。"
+                )
             raise ValueError(
                 "Qwen3-TTSのコーパス一括音声化には、参照音声の文字起こしが必要です。"
                 "参照音声で実際に話している内容を入力してください。"
@@ -3570,9 +3642,9 @@ def create_demo_interface(demo: VoxCPMDemo):
         if _engine_is_irodori(engine_label) and _LANGUAGE_HINTS.get(target_language or "") != "Japanese":
             issues.append("Irodori-TTSは日本語を選択してください")
         if _engine_is_qwen3(engine_label):
-            has_sidecar = bool(history_wav and _read_reference_text_sidecar(history_wav))
-            if not (qwen3_ref_text or "").strip() and not has_sidecar:
-                issues.append("参照音声の文字起こし")
+            ref_issues, ref_notes = _qwen3_reference_preflight_notes(ref_wav, history_wav, qwen3_ref_text)
+            issues.extend(ref_issues)
+            notes.extend(ref_notes)
         if ref_wav:
             notes.append(f"参照: {Path(ref_wav).name}")
         elif history_wav:
@@ -3600,9 +3672,10 @@ def create_demo_interface(demo: VoxCPMDemo):
             issues.append("VoiceDesignCloner連携（Qwen3-TTS・簡易）を選択")
         if not ref_wav and not history_wav:
             issues.append("参照音声または履歴の声")
-        has_sidecar = bool(history_wav and _read_reference_text_sidecar(history_wav))
-        if not (qwen3_ref_text or "").strip() and not has_sidecar:
-            issues.append("参照音声の文字起こし")
+        if _engine_is_qwen3(engine_label):
+            ref_issues, ref_notes = _qwen3_reference_preflight_notes(ref_wav, history_wav, qwen3_ref_text)
+            issues.extend(ref_issues)
+            notes.extend(ref_notes)
         try:
             lines = _collect_corpus_lines(corpus_text, corpus_file, max_lines)
         except Exception:
@@ -4386,7 +4459,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 label="参照音声の文字起こし（Qwen3-TTS用）",
                                 placeholder="参照音声で実際に話している内容を入力してください。例: こんにちは。今日は音声生成のテストをしています。",
                                 lines=3,
-                                info="Qwen3-TTSの声のクローンでは、参照音声と同じ内容の文字起こしが必要です。Qwen3の履歴を選んだ場合は保存済みテキストを自動利用できます。",
+                                info="Qwen3-TTSでは参照音声と同じ内容の文字起こしが必要です。履歴だけを選んだ場合は保存済みテキストを自動利用します。アップロード音声を使う場合は、この欄に入力してください。",
                             )
                         with gr.Group(visible=False) as clone_irodori_profile_group:
                             gr.Markdown("**Irodori声質ヒント**\n\n参照音声が優先されますが、年齢・性別・特徴を声質説明として補助的に渡します。")
