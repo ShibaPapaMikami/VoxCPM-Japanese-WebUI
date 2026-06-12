@@ -352,7 +352,7 @@ body,
     text-align: center;
 }
 .gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label input {
-    margin-right: 0.45rem !important;
+    display: none !important;
 }
 .gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label.selected {
     background: var(--jp-accent) !important;
@@ -429,18 +429,12 @@ body,
     background: var(--jp-surface) !important;
     color: var(--jp-accent) !important;
     border-color: var(--jp-accent) !important;
-    box-shadow: 0 1px 4px rgba(37, 99, 235, 0.16);
+    box-shadow: inset 0 -3px 0 var(--jp-accent), 0 1px 4px rgba(37, 99, 235, 0.12);
     z-index: 1;
 }
 .gradio-container .mode-tabs button[role="tab"][aria-selected="true"]::after {
-    background: var(--jp-accent);
-    border-radius: 999px;
-    bottom: 0.25rem;
-    content: "";
-    height: 3px;
-    left: 25%;
-    position: absolute;
-    right: 25%;
+    content: none !important;
+    display: none !important;
 }
 @media (max-width: 640px) {
     .gradio-container .mode-tabs .tab-wrapper {
