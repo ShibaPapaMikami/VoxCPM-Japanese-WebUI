@@ -326,9 +326,59 @@ body,
     white-space: nowrap;
     font-weight: 700;
 }
+.gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) {
+    align-items: stretch !important;
+    background: #eef2f7 !important;
+    border: 1px solid var(--jp-border-strong) !important;
+    border-radius: 8px !important;
+    display: grid !important;
+    gap: 0.25rem !important;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+    overflow: hidden;
+    padding: 0.25rem !important;
+}
+.gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label {
+    align-items: center;
+    background: #ffffff !important;
+    border: 1px solid var(--jp-border) !important;
+    border-radius: 6px !important;
+    box-shadow: none !important;
+    color: var(--jp-text) !important;
+    display: flex !important;
+    justify-content: center;
+    min-height: 2.55rem;
+    padding: 0.6rem 0.7rem !important;
+    position: relative;
+    text-align: center;
+}
+.gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label input {
+    margin-right: 0.45rem !important;
+}
+.gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label.selected {
+    background: var(--jp-accent) !important;
+    border-color: var(--jp-accent) !important;
+    color: #ffffff !important;
+    z-index: 1;
+}
+.gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label.selected::after {
+    background: #ffffff;
+    border-radius: 999px;
+    bottom: 0.25rem;
+    content: "";
+    height: 3px;
+    left: 20%;
+    position: absolute;
+    right: 20%;
+}
+.gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label.selected span,
+.gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label.selected * {
+    color: #ffffff !important;
+}
 .mode-heading {
-    margin: 0.85rem 0 0.45rem 0;
+    border-top: 1px solid var(--jp-border);
+    margin: 1.1rem 0 0.55rem 0;
     padding: 0 0.1rem;
+    padding-top: 1rem;
 }
 .mode-heading h2 {
     margin: 0;
@@ -345,16 +395,18 @@ body,
 }
 .gradio-container .mode-tabs .tab-nav,
 .gradio-container .mode-tabs div[role="tablist"] {
-    background: #eef2f7 !important;
-    border: 1px solid var(--jp-border) !important;
+    background: #ffffff !important;
+    border: 1px solid var(--jp-border-strong) !important;
     border-radius: 8px !important;
-    gap: 0.35rem !important;
-    padding: 0.35rem !important;
+    gap: 0 !important;
+    overflow: hidden;
+    padding: 0.25rem !important;
     margin-bottom: 0.7rem !important;
 }
 .gradio-container .mode-tabs button[role="tab"] {
-    border: 1px solid transparent !important;
-    border-radius: 6px !important;
+    background: #f8fafc !important;
+    border: 1px solid var(--jp-border) !important;
+    border-radius: 0 !important;
     color: var(--jp-text) !important;
     flex: 1 1 0;
     min-height: 2.6rem;
@@ -362,12 +414,33 @@ body,
     font-weight: 800 !important;
     letter-spacing: 0 !important;
     justify-content: center;
+    position: relative;
+}
+.gradio-container .mode-tabs button[role="tab"] + button[role="tab"] {
+    border-left: 0 !important;
+}
+.gradio-container .mode-tabs button[role="tab"]:first-child {
+    border-radius: 6px 0 0 6px !important;
+}
+.gradio-container .mode-tabs button[role="tab"]:last-child {
+    border-radius: 0 6px 6px 0 !important;
 }
 .gradio-container .mode-tabs button[role="tab"][aria-selected="true"] {
     background: var(--jp-surface) !important;
     color: var(--jp-accent) !important;
-    border-color: var(--jp-border-strong) !important;
-    box-shadow: 0 1px 3px rgba(18, 25, 38, 0.12);
+    border-color: var(--jp-accent) !important;
+    box-shadow: 0 1px 4px rgba(37, 99, 235, 0.16);
+    z-index: 1;
+}
+.gradio-container .mode-tabs button[role="tab"][aria-selected="true"]::after {
+    background: var(--jp-accent);
+    border-radius: 999px;
+    bottom: 0.25rem;
+    content: "";
+    height: 3px;
+    left: 25%;
+    position: absolute;
+    right: 25%;
 }
 @media (max-width: 640px) {
     .gradio-container .mode-tabs .tab-wrapper {
@@ -4454,6 +4527,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 value=_ENGINE_VOXCPM,
                 label="音声エンジン",
                 info="任意エンジンが未セットアップの場合は、次に実行するコマンドを表示します。",
+                elem_classes=["engine-tabs"],
             )
             engine_status = gr.Markdown(_engine_status(_ENGINE_VOXCPM))
 
