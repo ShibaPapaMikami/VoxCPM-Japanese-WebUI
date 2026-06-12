@@ -1,8 +1,68 @@
-<h2 align="center">VoxCPM2：基于连续表征的多语言语音合成、创意音色设计与高保真声音克隆</h2>
+<h2 align="center">JP Voice Studio</h2>
+
+<p align="center">基于 VoxCPM2 的日语友好语音生成与声音克隆 Web UI，并可选支持 Irodori-TTS 与 Qwen3-TTS 工作流。</p>
 
 <p align="center">
   <a href="./README.md">日本語</a> | <a href="./README_en.md">English</a> | <b>中文</b>
 </p>
+
+## JP Voice Studio 追加功能
+
+JP Voice Studio 是基于 OpenBMB/VoxCPM 的非官方日语 Web UI 与集成层。它保留 VoxCPM2 原有能力，同时追加 Windows 向设置脚本、日语界面、音色历史复用、明确的 WAV 下载、可选音频引擎切换，以及适合团队内部使用的辅助工作流。
+
+声音克隆、参考音频和历史音色复用只应使用你本人拥有、已取得授权，或已明确允许用于当前目的的声音。请勿将本项目用于冒充真实人物或侵犯第三方权利。
+
+### 主要追加点
+
+- 日语优先的 Gradio Web UI 与 Windows 启动脚本。
+- 支持音色设计、声音克隆、高精度克隆、多语言发声、符号读法调整、单词级重音提示。
+- 音色设计历史可复用，并支持标签、评分、备注、搜索、排序、删除，以及 WAV 文件名模板。
+- 可选 Irodori-TTS 引擎，用于日语特化生成与实验性 LoRA 适配器使用。
+- 可选 VoiceDesignCloner 风格的 Qwen3-TTS 简易集成，用于音色设计、候选生成、参考音频简易克隆、语料批量生成、重采样、`esd.list` 生成，以及 Irodori LoRA 学习入口。
+- 提供设置诊断与最小烟雾测试文档，可检查 VoxCPM2、Irodori-TTS、Qwen3-TTS、CUDA、模型缓存与 `8808` 端口。
+
+### Windows 快速开始
+
+```powershell
+git clone https://github.com/ShibaPapaMikami/VoxCPM-Japanese-WebUI.git
+cd VoxCPM-Japanese-WebUI
+powershell -ExecutionPolicy Bypass -File scripts\setup_all_windows.ps1
+```
+
+启动后打开：
+
+```text
+http://127.0.0.1:8808/
+```
+
+如需同时安装可选引擎：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_all_windows.ps1 -WithIrodori -WithQwen3
+```
+
+### 可选引擎范围
+
+| 功能 | VoxCPM2 | Irodori-TTS | VoiceDesignCloner 风格 Qwen3-TTS 集成 |
+| --- | --- | --- | --- |
+| 音色设计 | 支持 | 非主要用途 | 支持 |
+| 声音克隆 | 支持 | 支持日语特化用途 | 简易参考音频 + 转录文本工作流 |
+| 高精度克隆 | 支持 | 不支持 | 不在高精度克隆标签页支持 |
+| 多语言发声 | 支持 | 仅日语 | 支持10种指定语言 |
+| 语料批量生成 | 非主要用途 | 非主要用途 | 支持进度、失败行、重试TXT输出 |
+| Style-Bert-VITS2 前处理 | 不包含 | 不包含 | 简易生成 `resampled` 与 `esd.list`；完全自动配置视为外部工具集成 |
+| LoRA 工作流 | VoxCPM 微调工具另行提供 | 实验性适配器推理与管理 | Irodori LoRA 数据准备与学习入口 |
+
+Qwen3-TTS 集成**不会同捆或完整移植 Voice-Design-Cloner 应用本体**。它是在 JP Voice Studio 内实现的简易工作流，并将生成、前处理、学习拆成可逐步确认的步骤。
+
+相关文档：
+
+- [日语设置指南](./README_SETUP_JA.md)
+- [烟雾测试指南](./docs/SMOKE_TEST_JA.md)
+- [样例生成与截图](./docs/SAMPLES_JA.md)
+- [发布检查清单](./docs/GITHUB_RELEASE_JA.md)
+- [路线图](./docs/ROADMAP_JA.md)
+- [第三方许可与注意事项](./THIRD_PARTY_NOTICES.md)
 
 <p align="center">
   <a href="https://github.com/OpenBMB/VoxCPM/"><img src="https://img.shields.io/badge/Project%20Page-GitHub-blue" alt="Project Page"></a>

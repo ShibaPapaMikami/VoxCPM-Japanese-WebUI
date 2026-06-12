@@ -1,6 +1,6 @@
 <h2 align="center">JP Voice Studio</h2>
 
-<p align="center">A Japanese-friendly speech generation and voice cloning studio based on VoxCPM2, with optional Irodori-TTS support.</p>
+<p align="center">A Japanese-friendly speech generation and voice cloning studio based on VoxCPM2, with optional Irodori-TTS and Qwen3-TTS workflow support.</p>
 
 > **Japanese Windows Web UI fork:** This repository includes a Japanese Gradio UI, Windows CUDA setup scripts, voice design history reuse, explicit WAV download, multilingual controls, and voice cloning workflow improvements. It is based on [OpenBMB/VoxCPM](https://github.com/OpenBMB/VoxCPM) and is not an official OpenBMB project.
 >
@@ -13,6 +13,64 @@
 <p align="center">
   <a href="./README.md">日本語</a> | <b>English</b> | <a href="./README_zh.md">中文</a>
 </p>
+
+## JP Voice Studio Additions
+
+JP Voice Studio is an unofficial Japanese Web UI and integration layer for OpenBMB/VoxCPM. It keeps the original VoxCPM2 capabilities while adding Windows-focused setup, Japanese UI labels, voice history reuse, explicit WAV download, optional engine switching, and helper workflows for internal or team use.
+
+Use voice cloning and generated voice reuse only with voices you own, voices you have permission to use, or voices explicitly approved for your intended use. Do not use this project to impersonate real people or infringe third-party rights.
+
+### Main Additions
+
+- Japanese-first Gradio Web UI with Windows launcher scripts.
+- Voice design, voice clone, high-precision clone, multilingual speech, reading-symbol controls, and word-level accent hints.
+- Voice design history with reuse, tags, ratings, notes, search, sorting, deletion, and configurable WAV file names.
+- Optional Irodori-TTS engine for Japanese-focused generation and experimental LoRA adapter use.
+- Optional VoiceDesignCloner-style Qwen3-TTS integration for voice design, candidate generation, simple reference-audio cloning, corpus batch generation, resampling, `esd.list` generation, and Irodori LoRA training entry points.
+- Setup diagnostics and smoke-test documentation for VoxCPM2, Irodori-TTS, Qwen3-TTS, CUDA, model cache, and port `8808`.
+
+### Windows Quick Start
+
+```powershell
+git clone https://github.com/ShibaPapaMikami/VoxCPM-Japanese-WebUI.git
+cd VoxCPM-Japanese-WebUI
+powershell -ExecutionPolicy Bypass -File scripts\setup_all_windows.ps1
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8808/
+```
+
+Optional engines:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_all_windows.ps1 -WithIrodori -WithQwen3
+```
+
+### Optional Engine Scope
+
+| Feature | VoxCPM2 | Irodori-TTS | VoiceDesignCloner-style Qwen3-TTS integration |
+| --- | --- | --- | --- |
+| Voice design | Supported | Not the main target | Supported |
+| Voice cloning | Supported | Supported for Japanese-focused use | Simple reference audio + transcript workflow |
+| High-precision clone | Supported | Not supported | Not supported in the high-precision tab |
+| Multilingual speech | Supported | Japanese only | 10 selected languages |
+| Corpus batch generation | Not the main target | Not the main target | Supported with progress, failed rows, and retry TXT output |
+| Style-Bert-VITS2 preparation | Not included | Not included | Simple `resampled` and `esd.list` output; full automatic placement is treated as external-tool integration |
+| LoRA workflow | VoxCPM fine-tuning tools exist separately | Experimental adapter inference and management | Irodori LoRA data prep and training entry point |
+
+The Qwen3-TTS integration does **not** bundle or fully port the Voice-Design-Cloner application. It implements a simplified workflow inside JP Voice Studio and keeps generation, preprocessing, and training as separate reviewable steps.
+
+Useful docs:
+
+- [Japanese setup guide](./README_SETUP_JA.md)
+- [Smoke test guide](./docs/SMOKE_TEST_JA.md)
+- [Sample generation and screenshots](./docs/SAMPLES_JA.md)
+- [Release checklist](./docs/GITHUB_RELEASE_JA.md)
+- [Roadmap](./docs/ROADMAP_JA.md)
+- [Third-party notices](./THIRD_PARTY_NOTICES.md)
 
 <p align="center">
   <a href="https://github.com/OpenBMB/VoxCPM/"><img src="https://img.shields.io/badge/Project%20Page-GitHub-blue" alt="Project Page"></a>
