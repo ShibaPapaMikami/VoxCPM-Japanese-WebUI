@@ -4195,7 +4195,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 include_denoise=False,
                                 cfg_default=2.6,
                             )
-                        design_btn = gr.Button("この声を生成", variant="primary", size="lg")
+                        with gr.Row():
+                            design_btn = gr.Button("この声を生成", variant="primary", size="lg")
+                            design_stop_btn = gr.Button("停止", variant="stop")
                         design_preflight = gr.Markdown(
                             _design_preflight(
                                 _ENGINE_VOXCPM,
@@ -4223,7 +4225,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 label="生成数",
                                 info="候補を増やすほど生成時間とVRAM使用時間が増えます。",
                             )
-                            design_qwen3_generate_btn = gr.Button("指定数を生成", variant="primary", size="lg")
+                            with gr.Row():
+                                design_qwen3_generate_btn = gr.Button("指定数を生成", variant="primary", size="lg")
+                                design_qwen3_stop_btn = gr.Button("停止", variant="stop")
                             design_qwen3_preflight = gr.Markdown(
                                 _design_preflight(
                                     _ENGINE_QWEN3,
@@ -4339,7 +4343,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 placeholder="例: calm_male_line2",
                                 lines=1,
                             )
-                            design_reuse_btn = gr.Button("履歴の声で生成", variant="primary")
+                            with gr.Row():
+                                design_reuse_btn = gr.Button("履歴の声で生成", variant="primary")
+                                design_reuse_stop_btn = gr.Button("停止", variant="stop")
                             design_reuse_preflight = gr.Markdown(
                                 _design_reuse_preflight(
                                     _ENGINE_VOXCPM,
@@ -4352,7 +4358,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                             design_reuse_output = gr.Audio(label="履歴の声で生成された音声")
                             design_reuse_file = gr.File(label="WAVダウンロード", interactive=False)
 
-                design_btn.click(
+                design_event = design_btn.click(
                     fn=_generate_design,
                     inputs=[
                         engine_selector,
@@ -4373,8 +4379,17 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[design_output, design_file, design_history],
                     show_progress=True,
                     api_name="design",
+                    trigger_mode="once",
+                    concurrency_limit=1,
+                    concurrency_id="voice_generation",
                 )
-                design_qwen3_generate_btn.click(
+                design_stop_btn.click(
+                    fn=None,
+                    cancels=[design_event],
+                    api_name=None,
+                    api_visibility="private",
+                )
+                design_qwen3_event = design_qwen3_generate_btn.click(
                     fn=_generate_qwen3_design_candidates,
                     inputs=[
                         engine_selector,
@@ -4405,6 +4420,15 @@ def create_demo_interface(demo: VoxCPMDemo):
                     ],
                     show_progress=True,
                     api_name="qwen3_design_candidates",
+                    trigger_mode="once",
+                    concurrency_limit=1,
+                    concurrency_id="voice_generation",
+                )
+                design_qwen3_stop_btn.click(
+                    fn=None,
+                    cancels=[design_qwen3_event],
+                    api_name=None,
+                    api_visibility="private",
                 )
                 design_history_refresh.click(
                     fn=_apply_voice_history_filter,
@@ -4514,7 +4538,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                     api_name=None,
                     api_visibility="private",
                 )
-                design_reuse_btn.click(
+                design_reuse_event = design_reuse_btn.click(
                     fn=_generate_from_design_history,
                     inputs=[
                         engine_selector,
@@ -4530,6 +4554,15 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[design_reuse_output, design_reuse_file],
                     show_progress=True,
                     api_name="design_reuse",
+                    trigger_mode="once",
+                    concurrency_limit=1,
+                    concurrency_id="voice_generation",
+                )
+                design_reuse_stop_btn.click(
+                    fn=None,
+                    cancels=[design_reuse_event],
+                    api_name=None,
+                    api_visibility="private",
                 )
 
             with gr.Tab("声のクローン") as clone_tab:
@@ -4613,7 +4646,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                             _add_prosody_controls(clone_text)
                         with gr.Group() as clone_advanced_group:
                             clone_denoise, clone_normalize, clone_cfg, clone_steps = _advanced_settings(include_denoise=True)
-                        clone_btn = gr.Button("この声で生成", variant="primary", size="lg")
+                        with gr.Row():
+                            clone_btn = gr.Button("この声で生成", variant="primary", size="lg")
+                            clone_stop_btn = gr.Button("停止", variant="stop")
                         clone_preflight = gr.Markdown(
                             _clone_preflight(
                                 _ENGINE_VOXCPM,
@@ -4662,7 +4697,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 placeholder="例: my_character_corpus",
                                 lines=1,
                             )
-                            clone_corpus_btn = gr.Button("コーパスを一括生成", variant="secondary")
+                            with gr.Row():
+                                clone_corpus_btn = gr.Button("コーパスを一括生成", variant="secondary")
+                                clone_corpus_stop_btn = gr.Button("停止", variant="stop")
                             clone_corpus_preflight = gr.Markdown(
                                 _corpus_preflight(
                                     _ENGINE_QWEN3,
@@ -4888,7 +4925,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                             "3. 読み上げテキストを入力して生成します。"
                         )
 
-                clone_btn.click(
+                clone_event = clone_btn.click(
                     fn=_generate_clone,
                     inputs=[
                         engine_selector,
@@ -4913,8 +4950,17 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[clone_output, clone_file],
                     show_progress=True,
                     api_name="clone",
+                    trigger_mode="once",
+                    concurrency_limit=1,
+                    concurrency_id="voice_generation",
                 )
-                clone_corpus_btn.click(
+                clone_stop_btn.click(
+                    fn=None,
+                    cancels=[clone_event],
+                    api_name=None,
+                    api_visibility="private",
+                )
+                clone_corpus_event = clone_corpus_btn.click(
                     fn=_generate_qwen3_corpus_batch,
                     inputs=[
                         engine_selector,
@@ -4936,6 +4982,15 @@ def create_demo_interface(demo: VoxCPMDemo):
                     ],
                     show_progress=True,
                     api_name="qwen3_corpus_batch",
+                    trigger_mode="once",
+                    concurrency_limit=1,
+                    concurrency_id="voice_generation",
+                )
+                clone_corpus_stop_btn.click(
+                    fn=None,
+                    cancels=[clone_corpus_event],
+                    api_name=None,
+                    api_visibility="private",
                 )
                 clone_corpus_open_dir.click(
                     fn=_open_existing_folder,
@@ -4951,6 +5006,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[clone_corpus_resample_status],
                     show_progress=True,
                     api_name="qwen3_corpus_resample",
+                    trigger_mode="once",
+                    concurrency_limit=1,
+                    concurrency_id="voice_generation",
                 )
                 clone_corpus_esd_btn.click(
                     fn=_generate_corpus_esd_list,
@@ -4958,6 +5016,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[clone_corpus_esd_status, clone_corpus_esd_file],
                     show_progress=True,
                     api_name="qwen3_corpus_esd_list",
+                    trigger_mode="once",
+                    concurrency_limit=1,
+                    concurrency_id="voice_generation",
                 )
                 clone_lora_prepare_btn.click(
                     fn=_prepare_irodori_lora_data,
@@ -4976,6 +5037,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                     ],
                     show_progress=True,
                     api_name="qwen3_prepare_irodori_lora_data",
+                    trigger_mode="once",
+                    concurrency_limit=1,
+                    concurrency_id="voice_generation",
                 )
                 clone_lora_quality_btn.click(
                     fn=_check_irodori_lora_lab_data,
@@ -4983,6 +5047,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[clone_lora_quality_status],
                     show_progress=True,
                     api_name="qwen3_check_irodori_lora_data",
+                    trigger_mode="once",
+                    concurrency_limit=1,
+                    concurrency_id="voice_generation",
                 )
                 lora_train_event = clone_lora_train_btn.click(
                     fn=_run_irodori_lora_training,
@@ -4997,6 +5064,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[clone_lora_train_status, clone_lora_train_log],
                     show_progress=True,
                     api_name="qwen3_run_irodori_lora_training",
+                    trigger_mode="once",
+                    concurrency_limit=1,
+                    concurrency_id="voice_generation",
                 )
                 lora_train_event.then(
                     fn=_refresh_lora_adapter_management,
@@ -5134,7 +5204,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 placeholder="参照音声で実際に話している内容を入力してください。例: こんにちは。今日はVoxCPMのテストをしています。",
                                 lines=5,
                             )
-                            hifi_transcribe_btn = gr.Button("自動文字起こしを試す", variant="secondary")
+                            with gr.Row():
+                                hifi_transcribe_btn = gr.Button("自動文字起こしを試す", variant="secondary")
+                                hifi_transcribe_stop_btn = gr.Button("停止", variant="stop")
                             hifi_transcribe_status = gr.Markdown(
                                 "自動文字起こしは補助機能です。うまくいかない場合は、上の欄に事前の文字起こしを貼り付けてください。"
                             )
@@ -5158,7 +5230,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                             )
                             _add_prosody_controls(hifi_text)
                             hifi_denoise, hifi_normalize, hifi_cfg, hifi_steps = _advanced_settings(include_denoise=True)
-                            hifi_btn = gr.Button("高精度クローンで生成", variant="primary", size="lg")
+                            with gr.Row():
+                                hifi_btn = gr.Button("高精度クローンで生成", variant="primary", size="lg")
+                                hifi_stop_btn = gr.Button("停止", variant="stop")
                             hifi_preflight = gr.Markdown(
                                 _hifi_preflight(
                                     _ENGINE_VOXCPM,
@@ -5191,12 +5265,21 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 "参照音声の文字起こしが間違っていると、生成冒頭に不要な言葉が混ざることがあります。"
                             )
 
-                hifi_transcribe_btn.click(
+                hifi_transcribe_event = hifi_transcribe_btn.click(
                     fn=_transcribe_reference,
                     inputs=[hifi_ref, hifi_history],
                     outputs=[hifi_prompt_text, hifi_transcribe_status],
                     show_progress=True,
                     api_name="transcribe_reference",
+                    trigger_mode="once",
+                    concurrency_limit=1,
+                    concurrency_id="voice_generation",
+                )
+                hifi_transcribe_stop_btn.click(
+                    fn=None,
+                    cancels=[hifi_transcribe_event],
+                    api_name=None,
+                    api_visibility="private",
                 )
                 hifi_script_to_prompt_btn.click(
                     fn=_copy_recording_script_to_prompt,
@@ -5220,7 +5303,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                     api_name=None,
                     api_visibility="private",
                 )
-                hifi_btn.click(
+                hifi_event = hifi_btn.click(
                     fn=_generate_high_fidelity_clone,
                     inputs=[
                         engine_selector,
@@ -5241,6 +5324,15 @@ def create_demo_interface(demo: VoxCPMDemo):
                     outputs=[hifi_output, hifi_file],
                     show_progress=True,
                     api_name="high_fidelity_clone",
+                    trigger_mode="once",
+                    concurrency_limit=1,
+                    concurrency_id="voice_generation",
+                )
+                hifi_stop_btn.click(
+                    fn=None,
+                    cancels=[hifi_event],
+                    api_name=None,
+                    api_visibility="private",
                 )
 
         design_preflight_inputs = [
