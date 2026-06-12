@@ -326,25 +326,67 @@ body,
     white-space: nowrap;
     font-weight: 700;
 }
-.gradio-container .tabs {
-    gap: 0.35rem;
+.mode-heading {
+    margin: 0.85rem 0 0.45rem 0;
+    padding: 0 0.1rem;
 }
-.gradio-container .tab-nav,
-.gradio-container div[role="tablist"] {
-    border-bottom: 1px solid var(--jp-border) !important;
-    gap: 0.25rem !important;
+.mode-heading h2 {
+    margin: 0;
+    font-size: 1rem;
+    line-height: 1.3;
 }
-.gradio-container button[role="tab"] {
-    border-radius: 6px 6px 0 0 !important;
+.mode-heading p {
+    margin: 0.25rem 0 0 0;
+    color: var(--jp-muted);
+    font-size: 0.92rem;
+}
+.gradio-container .mode-tabs.tabs {
+    gap: 0.7rem;
+}
+.gradio-container .mode-tabs .tab-nav,
+.gradio-container .mode-tabs div[role="tablist"] {
+    background: #eef2f7 !important;
+    border: 1px solid var(--jp-border) !important;
+    border-radius: 8px !important;
+    gap: 0.35rem !important;
+    padding: 0.35rem !important;
+    margin-bottom: 0.7rem !important;
+}
+.gradio-container .mode-tabs button[role="tab"] {
+    border: 1px solid transparent !important;
+    border-radius: 6px !important;
+    color: var(--jp-text) !important;
+    flex: 1 1 0;
+    min-height: 2.6rem;
     padding: 0.65rem 0.9rem !important;
-    font-weight: 700 !important;
+    font-weight: 800 !important;
     letter-spacing: 0 !important;
+    justify-content: center;
 }
-.gradio-container button[role="tab"][aria-selected="true"] {
+.gradio-container .mode-tabs button[role="tab"][aria-selected="true"] {
     background: var(--jp-surface) !important;
     color: var(--jp-accent) !important;
-    border-color: var(--jp-border) !important;
-    box-shadow: inset 0 -2px 0 var(--jp-accent);
+    border-color: var(--jp-border-strong) !important;
+    box-shadow: 0 1px 3px rgba(18, 25, 38, 0.12);
+}
+@media (max-width: 640px) {
+    .gradio-container .mode-tabs .tab-wrapper {
+        align-items: stretch !important;
+    }
+    .gradio-container .mode-tabs .tab-container.visually-hidden button,
+    .gradio-container .mode-tabs button[role="tab"] {
+        font-size: 0.84rem !important;
+        min-width: 0 !important;
+        padding-left: 0.35rem !important;
+        padding-right: 0.35rem !important;
+        white-space: nowrap !important;
+    }
+    .gradio-container .mode-tabs .tab-container[role="tablist"] {
+        width: 100% !important;
+    }
+    .gradio-container .mode-tabs .tab-container[role="tablist"] button[role="tab"] {
+        width: 100% !important;
+    }
 }
 .gradio-container .block,
 .gradio-container .form,
@@ -3304,7 +3346,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             const isQwen3 = label.startsWith("VoiceDesignCloner連携") || label.startsWith("Qwen3-TTS");
             const hideHifi = isIrodori || isQwen3;
             const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
-            const hifiTabs = tabs.filter((tab) => (tab.textContent || "").includes("高精度クローン"));
+            const hifiTabs = tabs.filter((tab) => (tab.textContent || "").includes("精密"));
             hifiTabs.forEach((tab) => {
                 tab.style.display = hideHifi ? "none" : "";
                 tab.setAttribute("aria-hidden", hideHifi ? "true" : "false");
@@ -3317,8 +3359,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             });
             if (hideHifi && hifiTabs.some((tab) => tab.getAttribute("aria-selected") === "true")) {
                 const fallbackTab =
-                    tabs.find((tab) => (tab.textContent || "").includes("声のクローン")) ||
-                    tabs.find((tab) => (tab.textContent || "").includes("声のデザイン"));
+                    tabs.find((tab) => (tab.textContent || "").includes("クローン")) ||
+                    tabs.find((tab) => (tab.textContent || "").includes("設計"));
                 if (fallbackTab) fallbackTab.click();
             }
         };
@@ -4404,7 +4446,7 @@ def create_demo_interface(demo: VoxCPMDemo):
 
     with gr.Blocks(title="JP Voice Studio") as interface:
         app_header = gr.HTML(_app_header_html(_ENGINE_VOXCPM))
-        gr.Markdown("**用途に合わせてモードを選んでください。** 各画面には、その生成方法に必要な入力だけを表示しています。")
+        gr.Markdown("**音声エンジンを選び、続けて使う機能を選んでください。** 各画面には、その生成方法に必要な入力だけを表示しています。")
 
         with gr.Accordion("音声エンジン", open=True):
             engine_selector = gr.Radio(
@@ -4415,31 +4457,15 @@ def create_demo_interface(demo: VoxCPMDemo):
             )
             engine_status = gr.Markdown(_engine_status(_ENGINE_VOXCPM))
 
-        with gr.Accordion("保存先フォルダ", open=True):
-            output_dir_global = gr.Textbox(
-                value=str(_output_dir()),
-                label="保存先フォルダ",
-                info="生成したWAVと声のデザイン履歴を保存するフォルダです。相対パスも指定できます。",
-                lines=1,
-            )
-            with gr.Row():
-                output_dir_apply = gr.Button("保存先を変更", variant="secondary")
-                output_dir_open = gr.Button("フォルダを開く", variant="secondary")
-            filename_template_global = gr.Textbox(
-                value=current_filename_template["template"],
-                label="WAVファイル名の形式",
-                info="生成したWAVの保存ファイル名を決めます。よく分からない場合は、そのままで大丈夫です。",
-                lines=1,
-            )
-            gr.Markdown(
-                "`{prefix}`=生成種類 / `{name}`=入力した保存名 / `{datetime}`=日時 / "
-                "`{id}`=重複防止ID"
-            )
-            filename_template_apply = gr.Button("ファイル名の形式を保存", variant="secondary")
-            output_dir_status = gr.Markdown("")
+        gr.HTML(
+            '<div class="mode-heading">'
+            '<h2>使う機能を選ぶ</h2>'
+            '<p>設計=声のデザイン、クローン=参照音声、精密=高精度クローン。選択中の音声エンジンで使える機能だけが表示されます。</p>'
+            '</div>'
+        )
 
-        with gr.Tabs():
-            with gr.Tab("声のデザイン") as design_tab:
+        with gr.Tabs(elem_classes=["mode-tabs"]):
+            with gr.Tab("設計") as design_tab:
                 design_intro = gr.Markdown(
                     "参照音声を使わず、声の雰囲気を文章で指定して新しい声を作ります。"
                     "男性声・女性声・話す速さなどの日本語指定は、内部でモデル向けの声質タグに補強されます。"
@@ -4878,7 +4904,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                     api_visibility="private",
                 )
 
-            with gr.Tab("声のクローン") as clone_tab:
+            with gr.Tab("クローン") as clone_tab:
                 clone_intro = gr.Markdown("参照音声の声質をもとに、別の文章を読み上げます。選択中のエンジンに必要な追加項目だけを表示します。")
                 clone_irodori_notice = gr.Markdown(
                     "Irodori-TTSでは参照音声を優先し、日本語テキストを生成します。"
@@ -5483,7 +5509,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                     api_visibility="private",
                 )
 
-            with gr.Tab("高精度クローン") as hifi_tab:
+            with gr.Tab("精密") as hifi_tab:
                 gr.Markdown(
                     "参照音声と、その音声で話している内容の文字起こしを使います。"
                     "事前に文字起こししたテキストを貼り付けても使えます。"
@@ -5647,6 +5673,29 @@ def create_demo_interface(demo: VoxCPMDemo):
                     api_name=None,
                     api_visibility="private",
                 )
+
+        with gr.Accordion("保存・ファイル名設定", open=False):
+            output_dir_global = gr.Textbox(
+                value=str(_output_dir()),
+                label="保存先フォルダ",
+                info="生成したWAVと声のデザイン履歴を保存するフォルダです。相対パスも指定できます。",
+                lines=1,
+            )
+            with gr.Row():
+                output_dir_apply = gr.Button("保存先を変更", variant="secondary")
+                output_dir_open = gr.Button("フォルダを開く", variant="secondary")
+            filename_template_global = gr.Textbox(
+                value=current_filename_template["template"],
+                label="WAVファイル名の形式",
+                info="生成したWAVの保存ファイル名を決めます。よく分からない場合は、そのままで大丈夫です。",
+                lines=1,
+            )
+            gr.Markdown(
+                "`{prefix}`=生成種類 / `{name}`=入力した保存名 / `{datetime}`=日時 / "
+                "`{id}`=重複防止ID"
+            )
+            filename_template_apply = gr.Button("ファイル名の形式を保存", variant="secondary")
+            output_dir_status = gr.Markdown("")
 
         design_preflight_inputs = [
             engine_selector,
