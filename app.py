@@ -3252,6 +3252,50 @@ def create_demo_interface(demo: VoxCPMDemo):
             unsupported_hifi,
         )
 
+    def _clear_engine_specific_state():
+        return (
+            gr.update(value=None),  # design_output
+            gr.update(value=None),  # design_file
+            gr.update(value=None),  # design_gacha_audio_1
+            gr.update(value=None),  # design_gacha_audio_2
+            gr.update(value=None),  # design_gacha_audio_3
+            gr.update(value=None),  # design_gacha_audio_4
+            gr.update(value=None),  # design_gacha_file_1
+            gr.update(value=None),  # design_gacha_file_2
+            gr.update(value=None),  # design_gacha_file_3
+            gr.update(value=None),  # design_gacha_file_4
+            gr.update(value=""),  # design_gacha_status
+            gr.update(value=None),  # design_reuse_output
+            gr.update(value=None),  # design_reuse_file
+            gr.update(value=None),  # clone_ref
+            gr.update(value=None),  # clone_history
+            gr.update(value=""),  # clone_qwen3_ref_text
+            gr.update(value=None),  # clone_output
+            gr.update(value=None),  # clone_file
+            gr.update(value=""),  # clone_corpus_status
+            gr.update(value=""),  # clone_corpus_output_dir
+            gr.update(value=None),  # clone_corpus_text_list_file
+            gr.update(value=None),  # clone_corpus_retry_file
+            gr.update(value=""),  # clone_corpus_tools_dir
+            gr.update(value=""),  # clone_corpus_resample_status
+            gr.update(value=""),  # clone_corpus_esd_status
+            gr.update(value=None),  # clone_corpus_esd_file
+            gr.update(value=""),  # clone_lora_prepare_status
+            gr.update(value=""),  # clone_lora_lab_dir
+            gr.update(value=""),  # clone_lora_train_lab_dir
+            gr.update(value=None),  # clone_lora_lab_text_file
+            gr.update(value=None),  # clone_lora_jsonl_file
+            gr.update(value=None),  # hifi_ref
+            gr.update(value=None),  # hifi_history
+            gr.update(value=""),  # hifi_prompt_text
+            gr.update(value=""),  # hifi_transcribe_status
+            gr.update(value=None),  # hifi_output
+            gr.update(value=None),  # hifi_file
+        )
+
+    def _engine_change_updates(engine_label: str):
+        return (*_engine_visibility_updates(engine_label), *_clear_engine_specific_state())
+
     _engine_tab_visibility_js = """
     (engineLabel) => {
         const apply = () => {
@@ -5748,10 +5792,50 @@ def create_demo_interface(demo: VoxCPMDemo):
             hifi_irodori_notice,
         ]
 
+        engine_clear_outputs = [
+            design_output,
+            design_file,
+            design_gacha_audio_1,
+            design_gacha_audio_2,
+            design_gacha_audio_3,
+            design_gacha_audio_4,
+            design_gacha_file_1,
+            design_gacha_file_2,
+            design_gacha_file_3,
+            design_gacha_file_4,
+            design_gacha_status,
+            design_reuse_output,
+            design_reuse_file,
+            clone_ref,
+            clone_history,
+            clone_qwen3_ref_text,
+            clone_output,
+            clone_file,
+            clone_corpus_status,
+            clone_corpus_output_dir,
+            clone_corpus_text_list_file,
+            clone_corpus_retry_file,
+            clone_corpus_tools_dir,
+            clone_corpus_resample_status,
+            clone_corpus_esd_status,
+            clone_corpus_esd_file,
+            clone_lora_prepare_status,
+            clone_lora_lab_dir,
+            clone_lora_train_lab_dir,
+            clone_lora_lab_text_file,
+            clone_lora_jsonl_file,
+            hifi_ref,
+            hifi_history,
+            hifi_prompt_text,
+            hifi_transcribe_status,
+            hifi_output,
+            hifi_file,
+        ]
+
         engine_selector.change(
-            fn=_engine_visibility_updates,
+            fn=_engine_change_updates,
             inputs=[engine_selector],
-            outputs=engine_visibility_outputs,
+            outputs=[*engine_visibility_outputs, *engine_clear_outputs],
             js=_engine_tab_visibility_js,
             show_progress=False,
             api_name=None,
