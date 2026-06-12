@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -113,7 +114,11 @@ def generate(args: argparse.Namespace) -> tuple[int, np.ndarray]:
     raise ValueError(f"Unknown mode: {args.mode}")
 
 
-def generate_clone_batch(args: argparse.Namespace) -> tuple[Path, Path, int]:
+def _write_progress(path: Path, payload: dict) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def generate_clone_batch(args: argparse.Namespace) -> tuple[Path, Path, int, int]:
     if not args.ref_wav:
         raise ValueError("--ref-wav is required for clone-batch mode.")
     if not args.ref_text:
@@ -130,6 +135,9 @@ def generate_clone_batch(args: argparse.Namespace) -> tuple[Path, Path, int]:
     output_dir = Path(args.output_dir)
     raw_dir = output_dir / "raw"
     text_list_path = output_dir / (args.text_list or "Neutral.txt")
+    progress_path = output_dir / "_progress.json"
+    failed_path = output_dir / "_failed.jsonl"
+    retry_path = output_dir / "_retry_texts.txt"
     raw_dir.mkdir(parents=True, exist_ok=True)
 
     model = _load_model(args.clone_model)
@@ -140,20 +148,66 @@ def generate_clone_batch(args: argparse.Namespace) -> tuple[Path, Path, int]:
     )
 
     text_list_rows = []
+    failed_rows = []
+    retry_texts = []
+    _write_progress(
+        progress_path,
+        {"status": "running", "total": len(texts), "done": 0, "succeeded": 0, "failed": 0, "current": ""},
+    )
     for index, text in enumerate(texts, start=1):
-        wavs, sr = model.generate_voice_clone(
-            text=text,
-            language=args.language,
-            voice_clone_prompt=prompt,
-        )
         stem = f"{index:04d}"
         wav_path = raw_dir / f"{stem}.wav"
-        _write_wav(wav_path, _first_audio(wavs), int(sr), int(args.target_sr or 0))
-        text_list_rows.append(f"{stem}|{text}")
-        print(f"[{index}/{len(texts)}] {wav_path.name}", flush=True)
+        try:
+            wavs, sr = model.generate_voice_clone(
+                text=text,
+                language=args.language,
+                voice_clone_prompt=prompt,
+            )
+            _write_wav(wav_path, _first_audio(wavs), int(sr), int(args.target_sr or 0))
+            text_list_rows.append(f"{stem}|{text}")
+            print(f"[ok {index}/{len(texts)}] {wav_path.name}", flush=True)
+        except Exception as exc:
+            failed_rows.append({"index": index, "stem": stem, "text": text, "error": str(exc)})
+            retry_texts.append(text)
+            print(f"[failed {index}/{len(texts)}] {stem}: {exc}", flush=True)
+        finally:
+            _write_progress(
+                progress_path,
+                {
+                    "status": "running",
+                    "total": len(texts),
+                    "done": index,
+                    "succeeded": len(text_list_rows),
+                    "failed": len(failed_rows),
+                    "current": stem,
+                },
+            )
 
     text_list_path.write_text("\n".join(text_list_rows) + "\n", encoding="utf-8")
-    return raw_dir, text_list_path, len(texts)
+    if failed_rows:
+        failed_path.write_text(
+            "\n".join(json.dumps(row, ensure_ascii=False) for row in failed_rows) + "\n",
+            encoding="utf-8",
+        )
+        retry_path.write_text("\n".join(retry_texts) + "\n", encoding="utf-8")
+    else:
+        for path in (failed_path, retry_path):
+            if path.exists():
+                path.unlink()
+    _write_progress(
+        progress_path,
+        {
+            "status": "complete" if text_list_rows else "failed",
+            "total": len(texts),
+            "done": len(texts),
+            "succeeded": len(text_list_rows),
+            "failed": len(failed_rows),
+            "current": "",
+        },
+    )
+    if not text_list_rows:
+        raise RuntimeError(f"All {len(texts)} corpus rows failed. See {failed_path}")
+    return raw_dir, text_list_path, len(text_list_rows), len(failed_rows)
 
 
 def main() -> None:
@@ -174,8 +228,10 @@ def main() -> None:
 
     _inject_windows_truststore()
     if args.mode == "clone-batch":
-        raw_dir, text_list_path, count = generate_clone_batch(args)
+        raw_dir, text_list_path, count, failed = generate_clone_batch(args)
         print(f"Generated {count} wav files: {raw_dir}")
+        if failed:
+            print(f"Failed rows: {failed}")
         print(f"Text list: {text_list_path}")
         return
 

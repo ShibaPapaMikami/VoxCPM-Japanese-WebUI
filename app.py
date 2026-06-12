@@ -1,15 +1,17 @@
 import os
+import queue
 import re
 import sys
 import json
 import logging
 import shutil
 import subprocess
+import threading
 import time
 import numpy as np
 import gradio as gr
 from gradio import processing_utils
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 from funasr import AutoModel
 from pathlib import Path
 from datetime import datetime
@@ -1231,6 +1233,7 @@ class VoxCPMDemo:
         reference_wav_path_input: str,
         reference_text_input: str,
         target_sr: int = 44100,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
     ) -> tuple[str, str, str]:
         if not reference_wav_path_input:
             raise ValueError("コーパス一括音声化には参照音声が必要です。")
@@ -1277,16 +1280,52 @@ class VoxCPMDemo:
                 "GIT_CONFIG_VALUE_0": "schannel",
             }
         )
-        result = subprocess.run(
+        process = subprocess.Popen(
             command,
             cwd=str(Path.cwd()),
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            timeout=7200,
             env=env,
+            encoding="utf-8",
+            errors="replace",
         )
-        if result.returncode != 0:
-            detail = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
+        output_lines: list[str] = []
+        line_queue: queue.Queue[Optional[str]] = queue.Queue()
+
+        def _read_process_output() -> None:
+            try:
+                if process.stdout is None:
+                    return
+                for line in process.stdout:
+                    line_queue.put(line)
+            finally:
+                line_queue.put(None)
+
+        threading.Thread(target=_read_process_output, daemon=True).start()
+        deadline = time.monotonic() + 7200
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                process.kill()
+                raise RuntimeError("Qwen3-TTSのコーパス一括音声化がタイムアウトしました。")
+            try:
+                line = line_queue.get(timeout=min(0.5, remaining))
+            except queue.Empty:
+                continue
+            if line is None:
+                break
+            clean_line = line.rstrip()
+            output_lines.append(clean_line)
+            match = (
+                re.search(r"\[(?:ok|failed)\s+(\d+)/(\d+)\]", clean_line)
+                or re.search(r"\[(\d+)/(\d+)\]", clean_line)
+            )
+            if match and progress_callback:
+                progress_callback(int(match.group(1)), int(match.group(2)), clean_line)
+        process.wait(timeout=10)
+        if process.returncode != 0:
+            detail = "\n".join(output_lines).strip()
             raise RuntimeError(f"Qwen3-TTSのコーパス一括音声化に失敗しました。\n{detail[-2000:]}")
 
         raw_dir = output_dir / "raw"
@@ -3422,6 +3461,69 @@ def create_demo_interface(demo: VoxCPMDemo):
         )
         return (sr, wav_np), _save_wav_for_download(sr, wav_np, "voice_clone", filename_hint)
 
+    def _count_text_list_rows(path: Path) -> int:
+        if not path.is_file():
+            return 0
+        return sum(1 for line in path.read_text(encoding="utf-8-sig").splitlines() if line.strip())
+
+    def _read_jsonl_rows(path: Path) -> list[dict]:
+        if not path.is_file():
+            return []
+        rows = []
+        for line in path.read_text(encoding="utf-8-sig").splitlines():
+            clean = line.strip()
+            if not clean:
+                continue
+            try:
+                value = json.loads(clean)
+                if isinstance(value, dict):
+                    rows.append(value)
+            except Exception:
+                rows.append({"error": clean})
+        return rows
+
+    def _qwen3_corpus_result_status(output_dir: Path, expected_count: int, raw_folder: str, text_list: str) -> tuple[str, Optional[str]]:
+        text_list_path = Path(text_list)
+        failed_path = output_dir / "_failed.jsonl"
+        retry_path = output_dir / "_retry_texts.txt"
+        progress_path = output_dir / "_progress.json"
+        succeeded = _count_text_list_rows(text_list_path)
+        failed_rows = _read_jsonl_rows(failed_path)
+        failed_count = len(failed_rows)
+        retry_file = str(retry_path) if retry_path.is_file() else None
+        progress_text = ""
+        if progress_path.is_file():
+            try:
+                progress = json.loads(progress_path.read_text(encoding="utf-8"))
+                progress_text = (
+                    f"- 進捗記録: {progress.get('done', succeeded + failed_count)}/{progress.get('total', expected_count)} "
+                    f"成功 {progress.get('succeeded', succeeded)} / 失敗 {progress.get('failed', failed_count)}\n"
+                )
+            except Exception:
+                progress_text = ""
+
+        lines = [
+            f"{succeeded}文のコーパス生成に成功しました。",
+            "",
+            f"- 入力: {expected_count}文",
+            f"- 成功: {succeeded}文",
+            f"- 失敗: {failed_count}文",
+            progress_text.rstrip(),
+            f"- WAV: `{raw_folder}`",
+            f"- テキストリスト: `{text_list}`",
+        ]
+        if retry_file:
+            lines.append(f"- 再実行用TXT: `{retry_file}`")
+        if failed_rows:
+            lines.extend(["", "失敗行（先頭5件）:"])
+            for row in failed_rows[:5]:
+                index = row.get("index", "?")
+                text = str(row.get("text", ""))[:80]
+                error = str(row.get("error", ""))[:160]
+                lines.append(f"- {index}: {text} / {error}")
+        lines.extend(["", "必要に応じて下の前処理でリサンプルや esd.list 生成を実行できます。"])
+        return "\n".join(line for line in lines if line != ""), retry_file
+
     def _generate_qwen3_corpus_batch(
         engine_label: str,
         ref_wav: Optional[str],
@@ -3433,6 +3535,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         max_lines: int,
         folder_name: str,
         target_sr: int,
+        progress=gr.Progress(),
     ):
         if not _engine_is_qwen3(engine_label):
             raise ValueError("コーパス一括音声化はVoiceDesignCloner連携（Qwen3-TTS・簡易）で利用できます。")
@@ -3460,6 +3563,7 @@ def create_demo_interface(demo: VoxCPMDemo):
 
         prepared_reference, converted_reference = _prepare_qwen3_reference_wav(ref_source)
         try:
+            progress(0, f"0/{len(lines)} コーパス生成を開始します")
             output_folder, raw_folder, text_list = demo.generate_qwen3_corpus(
                 texts_file_path=str(texts_path),
                 output_dir_path=str(output_dir),
@@ -3467,14 +3571,11 @@ def create_demo_interface(demo: VoxCPMDemo):
                 reference_wav_path_input=str(prepared_reference),
                 reference_text_input=reference_text,
                 target_sr=int(target_sr or 0),
+                progress_callback=lambda done, total, message: progress(done / max(total, 1), f"{done}/{total} {message}"),
             )
-            status = (
-                f"{len(lines)}文のコーパスを生成しました。\n\n"
-                f"- WAV: `{raw_folder}`\n"
-                f"- テキストリスト: `{text_list}`\n\n"
-                "必要に応じて下の前処理でリサンプルや esd.list 生成を実行できます。"
-            )
-            return status, output_folder, text_list
+            progress(1, "コーパス生成が完了しました")
+            status, retry_file = _qwen3_corpus_result_status(output_dir, len(lines), raw_folder, text_list)
+            return status, output_folder, text_list, retry_file
         finally:
             try:
                 if converted_reference and converted_reference.exists():
@@ -4592,6 +4693,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 interactive=False,
                             )
                             clone_corpus_text_list_file = gr.File(label="Neutral.txt", interactive=False)
+                            clone_corpus_retry_file = gr.File(label="再実行用TXT（失敗行のみ）", interactive=False)
                             clone_corpus_tools_dir = gr.Textbox(
                                 value="",
                                 label="前処理するコーパスフォルダ（貼り付け可）",
@@ -4826,7 +4928,12 @@ def create_demo_interface(demo: VoxCPMDemo):
                         clone_corpus_folder_name,
                         clone_corpus_target_sr,
                     ],
-                    outputs=[clone_corpus_status, clone_corpus_output_dir, clone_corpus_text_list_file],
+                    outputs=[
+                        clone_corpus_status,
+                        clone_corpus_output_dir,
+                        clone_corpus_text_list_file,
+                        clone_corpus_retry_file,
+                    ],
                     show_progress=True,
                     api_name="qwen3_corpus_batch",
                 )
