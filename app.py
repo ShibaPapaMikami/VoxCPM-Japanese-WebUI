@@ -1926,13 +1926,13 @@ def create_demo_interface(demo: VoxCPMDemo):
             _write_app_settings()
             return (
                 gr.update(value=clean_template),
-                f"ファイル名テンプレートを保存しました。例: `{preview_name}`",
+                f"WAVファイル名の形式を保存しました。例: `{preview_name}`",
             )
         except Exception as e:
             current_filename_template["template"] = old_template if "old_template" in locals() else default_filename_template
             return (
                 gr.update(value=current_filename_template["template"]),
-                f"ファイル名テンプレートを保存できませんでした: {e}",
+                f"WAVファイル名の形式を保存できませんでした: {e}",
             )
 
     def _read_corpus_file_text(corpus_file: Optional[str]) -> str:
@@ -4427,11 +4427,15 @@ def create_demo_interface(demo: VoxCPMDemo):
                 output_dir_open = gr.Button("フォルダを開く", variant="secondary")
             filename_template_global = gr.Textbox(
                 value=current_filename_template["template"],
-                label="WAV出力名テンプレート",
-                info="使える項目: {prefix}, {name}, {name_or_datetime}, {datetime}, {date}, {time}, {id}",
+                label="WAVファイル名の形式",
+                info="生成したWAVの保存ファイル名を決めます。よく分からない場合は、そのままで大丈夫です。",
                 lines=1,
             )
-            filename_template_apply = gr.Button("テンプレートを保存", variant="secondary")
+            gr.Markdown(
+                "`{prefix}`=生成種類 / `{name}`=入力した保存名 / `{datetime}`=日時 / "
+                "`{id}`=重複防止ID"
+            )
+            filename_template_apply = gr.Button("ファイル名の形式を保存", variant="secondary")
             output_dir_status = gr.Markdown("")
 
         with gr.Tabs():
