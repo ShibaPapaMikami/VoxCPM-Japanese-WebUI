@@ -2316,6 +2316,116 @@ def create_demo_interface(demo: VoxCPMDemo):
         value = choices[0][1] if choices else ""
         return gr.update(choices=choices, value=value)
 
+    def _list_lora_management_choices() -> list[tuple[str, str]]:
+        return [(label, value) for label, value in _list_irodori_lora_adapters() if value]
+
+    def _resolve_managed_lora_adapter(adapter_path: str) -> tuple[Path, Path]:
+        if not (adapter_path or "").strip():
+            raise ValueError("管理するLoRAアダプタを選択してください。")
+        adapter_dir = Path(os.path.expandvars(os.path.expanduser(adapter_path.strip()))).resolve()
+        lora_root = (_output_dir(create=False) / "lora").resolve()
+        if not adapter_dir.is_dir() or lora_root not in adapter_dir.parents:
+            raise ValueError("現在の保存先フォルダ内の学習済みLoRAだけ管理できます。")
+        speaker_dir = None
+        for parent in [adapter_dir, *adapter_dir.parents]:
+            if parent.parent == lora_root:
+                speaker_dir = parent
+                break
+        if speaker_dir is None:
+            raise ValueError("LoRAアダプタの親フォルダを特定できませんでした。")
+        resolved_adapter = _resolve_lora_adapter_dir(speaker_dir)
+        if resolved_adapter is None or resolved_adapter.resolve() != adapter_dir:
+            raise ValueError("管理対象のLoRAアダプタを確認できませんでした。")
+        return speaker_dir, adapter_dir
+
+    def _lora_management_update(selected_value: str = ""):
+        choices = _list_lora_management_choices()
+        values = {value for _, value in choices}
+        value = selected_value if selected_value in values else (choices[0][1] if choices else None)
+        return gr.update(choices=choices, value=value)
+
+    def _load_lora_management_selection(adapter_path: str):
+        if not adapter_path:
+            return "", "", "管理するLoRAアダプタを選択してください。"
+        try:
+            speaker_dir, adapter_dir = _resolve_managed_lora_adapter(adapter_path)
+            metadata = _read_lora_studio_metadata(adapter_dir)
+            display_name = (metadata.get("display_name") or speaker_dir.name).strip()
+            note = (metadata.get("note") or "").strip()
+            info = [
+                f"選択中: {display_name}",
+                f"アダプタ: {adapter_dir}",
+                f"保存フォルダ: {speaker_dir}",
+                f"データ: {metadata.get('sample_count') or '不明'}件 / steps: {metadata.get('max_steps') or '不明'}",
+            ]
+            return display_name, note, "\n".join(info)
+        except Exception as e:
+            return "", "", f"LoRA情報を読み込めませんでした: {e}"
+
+    def _write_lora_management_metadata(speaker_dir: Path, adapter_dir: Path, display_name: str, note: str) -> None:
+        metadata = _read_lora_studio_metadata(adapter_dir)
+        metadata.update(
+            {
+                "schema_version": int(metadata.get("schema_version") or 1),
+                "display_name": (display_name or speaker_dir.name).strip()[:80],
+                "note": (note or "").strip()[:2000],
+                "updated_at": datetime.now().isoformat(timespec="seconds"),
+                "adapter_dir": str(adapter_dir),
+                "output_dir": str(speaker_dir),
+            }
+        )
+        for target in (speaker_dir / _LORA_STUDIO_METADATA, adapter_dir / _LORA_STUDIO_METADATA):
+            target.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _save_lora_management_metadata(adapter_path: str, display_name: str, note: str):
+        try:
+            speaker_dir, adapter_dir = _resolve_managed_lora_adapter(adapter_path)
+            clean_name = (display_name or speaker_dir.name).strip()
+            if not clean_name:
+                raise ValueError("表示名を入力してください。")
+            _write_lora_management_metadata(speaker_dir, adapter_dir, clean_name, note)
+            choices = _list_irodori_lora_adapters()
+            message = f"LoRA情報を保存しました: {clean_name}"
+            return (
+                gr.update(choices=choices),
+                gr.update(choices=choices),
+                gr.update(choices=choices),
+                _lora_management_update(str(adapter_dir)),
+                _lora_adapter_summary() + f"\n\n{message}",
+            )
+        except Exception as e:
+            return gr.update(), gr.update(), gr.update(), gr.update(), f"LoRA情報を保存できませんでした: {e}"
+
+    def _delete_lora_adapter(adapter_path: str, confirm_delete: bool):
+        try:
+            if not confirm_delete:
+                raise ValueError("削除する場合は確認チェックをオンにしてください。")
+            speaker_dir, _adapter_dir = _resolve_managed_lora_adapter(adapter_path)
+            deleted_name = speaker_dir.name
+            shutil.rmtree(speaker_dir)
+            choices = _list_irodori_lora_adapters()
+            return (
+                gr.update(choices=choices, value=""),
+                gr.update(choices=choices, value=""),
+                gr.update(choices=choices, value=""),
+                _lora_management_update(""),
+                gr.update(value=""),
+                gr.update(value=""),
+                gr.update(value=False),
+                _lora_adapter_summary() + f"\n\n削除しました: {deleted_name}",
+            )
+        except Exception as e:
+            return (
+                gr.update(),
+                gr.update(),
+                gr.update(),
+                gr.update(),
+                gr.update(),
+                gr.update(),
+                gr.update(value=False),
+                f"LoRAアダプタを削除できませんでした: {e}",
+            )
+
     def _lora_adapter_summary() -> str:
         lora_root = _output_dir(create=False) / "lora"
         if not lora_root.is_dir():
@@ -2359,6 +2469,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             gr.update(choices=choices, value=value),
             gr.update(choices=choices, value=value),
             gr.update(choices=choices, value=value),
+            _lora_management_update(),
             _lora_adapter_summary(),
         )
 
@@ -4533,11 +4644,36 @@ def create_demo_interface(demo: VoxCPMDemo):
                             with gr.Row():
                                 clone_lora_adapter_refresh = gr.Button("3. LoRAアダプタ一覧を更新", variant="secondary")
                                 clone_lora_adapter_open_dir = gr.Button("LoRA保存フォルダを開く", variant="secondary")
+                            clone_lora_manage_select = gr.Dropdown(
+                                choices=_list_lora_management_choices(),
+                                value=(_list_lora_management_choices()[0][1] if _list_lora_management_choices() else None),
+                                label="管理するLoRAアダプタ",
+                                info="表示名とメモを編集できます。削除は保存フォルダごと削除します。",
+                            )
+                            clone_lora_manage_name = gr.Textbox(
+                                value="",
+                                label="表示名",
+                                placeholder="例: 社内ナレーション男性A",
+                                lines=1,
+                            )
+                            clone_lora_manage_note = gr.Textbox(
+                                value="",
+                                label="メモ",
+                                placeholder="例: 4件のテスト学習。低めで落ち着いた声。正式利用前に追加データ推奨。",
+                                lines=3,
+                            )
+                            with gr.Row():
+                                clone_lora_manage_save = gr.Button("LoRA情報を保存", variant="secondary")
+                                clone_lora_manage_delete_confirm = gr.Checkbox(
+                                    value=False,
+                                    label="選択中のLoRAを削除することを確認",
+                                )
+                                clone_lora_manage_delete = gr.Button("選択中のLoRAを削除", variant="stop")
                             clone_lora_adapter_status = gr.Textbox(
                                 value=_lora_adapter_summary(),
                                 label="学習済みLoRAアダプタ一覧",
                                 interactive=False,
-                                lines=7,
+                                lines=10,
                             )
                         gr.Markdown(
                             "**使い方**\n\n"
@@ -4658,6 +4794,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                         design_irodori_lora,
                         design_reuse_irodori_lora,
                         clone_irodori_lora,
+                        clone_lora_manage_select,
                         clone_lora_adapter_status,
                     ],
                     show_progress=False,
@@ -4677,11 +4814,49 @@ def create_demo_interface(demo: VoxCPMDemo):
                         design_irodori_lora,
                         design_reuse_irodori_lora,
                         clone_irodori_lora,
+                        clone_lora_manage_select,
                         clone_lora_adapter_status,
                     ],
                     show_progress=False,
                     api_name=None,
                     api_visibility="private",
+                )
+                clone_lora_manage_select.change(
+                    fn=_load_lora_management_selection,
+                    inputs=[clone_lora_manage_select],
+                    outputs=[clone_lora_manage_name, clone_lora_manage_note, clone_lora_adapter_status],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
+                )
+                clone_lora_manage_save.click(
+                    fn=_save_lora_management_metadata,
+                    inputs=[clone_lora_manage_select, clone_lora_manage_name, clone_lora_manage_note],
+                    outputs=[
+                        design_irodori_lora,
+                        design_reuse_irodori_lora,
+                        clone_irodori_lora,
+                        clone_lora_manage_select,
+                        clone_lora_adapter_status,
+                    ],
+                    show_progress=False,
+                    api_name="irodori_lora_save_metadata",
+                )
+                clone_lora_manage_delete.click(
+                    fn=_delete_lora_adapter,
+                    inputs=[clone_lora_manage_select, clone_lora_manage_delete_confirm],
+                    outputs=[
+                        design_irodori_lora,
+                        design_reuse_irodori_lora,
+                        clone_irodori_lora,
+                        clone_lora_manage_select,
+                        clone_lora_manage_name,
+                        clone_lora_manage_note,
+                        clone_lora_manage_delete_confirm,
+                        clone_lora_adapter_status,
+                    ],
+                    show_progress=False,
+                    api_name="irodori_lora_delete_adapter",
                 )
                 clone_lora_adapter_open_dir.click(
                     fn=_open_lora_root,
