@@ -2189,6 +2189,16 @@ def create_demo_interface(demo: VoxCPMDemo):
         output_dir = _output_dir() / "lora" / speaker
         return latent_dir, manifest_path, output_dir
 
+    def _write_lora_training_log(logs: list[str], speaker: str, result_label: str) -> Path:
+        log_dir = _output_dir() / "lora_data" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        clean_speaker = _sanitize_filename(speaker) or "unknown"
+        clean_result = _sanitize_filename(result_label) or "log"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_path = log_dir / f"{clean_speaker}_{timestamp}_{clean_result}.log"
+        log_path.write_text("\n".join(logs).rstrip() + "\n", encoding="utf-8")
+        return log_path
+
     def _is_lora_adapter_dir(path: Path) -> bool:
         if not path.is_dir():
             return False
@@ -2393,6 +2403,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         dry_run: bool,
     ):
         logs: list[str] = []
+        speaker_for_log = "unknown"
 
         def emit(status: str):
             return status, "\n".join(logs[-80:])
@@ -2405,6 +2416,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             if not dry_run and "実学習前に必ず直す項目:" in preflight_report:
                 raise RuntimeError("LoRA学習データに実学習前に直すべき項目があります。上の事前チェック結果を確認してください。")
             speaker, emotion, jsonl_path = _write_lora_training_jsonl_from_lab(lab_dir)
+            speaker_for_log = speaker
             irodori_root = demo.irodori_project_dir()
             irodori_python = _irodori_python_path()
             encode_script = Path.cwd() / "scripts" / "encode_irodori_latents.py"
@@ -2474,6 +2486,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             logs.append("[コマンド] train:")
             logs.append(" ".join(train_command_template))
             if dry_run:
+                log_path = _write_lora_training_log(logs, speaker_for_log, "dry_run")
+                logs.append(f"[ログ保存] {log_path}")
                 yield emit("ドライラン完了。チェックを外すと実際にlatentエンコードとLoRA学習を実行します。")
                 return
 
@@ -2514,9 +2528,16 @@ def create_demo_interface(demo: VoxCPMDemo):
                 learning_rate=lr_value,
             )
             logs.append(f"[メタ情報] {adapter_dir / _LORA_STUDIO_METADATA}")
+            log_path = _write_lora_training_log(logs, speaker_for_log, "success")
+            logs.append(f"[ログ保存] {log_path}")
             yield emit(f"LoRA学習が完了しました。出力先: {output_dir}")
         except Exception as e:
             logs.append(f"ERROR: {e}")
+            try:
+                log_path = _write_lora_training_log(logs, speaker_for_log, "failed")
+                logs.append(f"[ログ保存] {log_path}")
+            except Exception as log_error:
+                logs.append(f"[ログ保存失敗] {log_error}")
             yield emit(f"LoRA学習の準備または実行に失敗しました: {e}")
 
     def _save_wav_for_download(sr: int, wav_np: np.ndarray, prefix: str, filename_hint: str = "") -> str:
@@ -4450,6 +4471,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 "**LoRA学習実行（実験）**\n\n"
                                 "既定ではドライランです。ドライランでは学習せず、品質チェックと実行コマンドを確認します。"
                                 "実学習前にも同じチェックを自動実行し、対応データやWAVに致命的な不足がある場合は停止します。"
+                                "ドライラン、成功、失敗のログは `outputs/lora_data/logs` に保存されます。"
                             )
                             clone_lora_train_lab_dir = gr.Textbox(
                                 value="",
