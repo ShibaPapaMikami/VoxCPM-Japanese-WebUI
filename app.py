@@ -3457,6 +3457,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             gr.update(value=None),  # design_reuse_file
             gr.update(value=None),  # clone_ref
             gr.update(value=None, visible=False),  # clone_record_ref
+            gr.update(visible=False),  # clone_record_clear
             gr.update(value=""),  # clone_server_record_status
             gr.update(value=None),  # clone_history
             gr.update(value=""),  # clone_qwen3_ref_text
@@ -3477,6 +3478,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             gr.update(value=None),  # clone_lora_jsonl_file
             gr.update(value=None),  # hifi_ref
             gr.update(value=None, visible=False),  # hifi_record_ref
+            gr.update(visible=False),  # hifi_record_clear
             gr.update(value=""),  # hifi_server_record_status
             gr.update(value=None),  # hifi_history
             gr.update(value=""),  # hifi_prompt_text
@@ -3891,14 +3893,33 @@ def create_demo_interface(demo: VoxCPMDemo):
             raise ValueError("録音に使うマイクを選択してください。")
         return int(match.group(1))
 
+    def _prepare_microphone_recording(duration_seconds: float):
+        duration = max(1.0, min(float(duration_seconds or 10), 120.0))
+        return (
+            gr.update(value=None, visible=True),
+            f"**録音中です。約 {duration:.0f} 秒、そのままお待ちください。**",
+            gr.update(visible=False),
+        )
+
+    def _clear_microphone_recording():
+        return (
+            gr.update(value=None, visible=False),
+            "録音結果を消しました。必要ならもう一度録音してください。",
+            gr.update(visible=False),
+        )
+
     def _record_windows_microphone(device_label: str, duration_seconds: float):
         try:
             import sounddevice as sd
             import soundfile as sf
         except Exception:
-            return gr.update(), _microphone_dependency_message()
+            return gr.update(value=None, visible=False), _microphone_dependency_message(), gr.update(visible=False)
 
-        device_index = _parse_microphone_device_index(device_label)
+        try:
+            device_index = _parse_microphone_device_index(device_label)
+        except ValueError as exc:
+            return gr.update(value=None, visible=False), str(exc), gr.update(visible=False)
+
         duration = max(1.0, min(float(duration_seconds or 10), 120.0))
         try:
             device_info = sd.query_devices(device_index)
@@ -3907,18 +3928,18 @@ def create_demo_interface(demo: VoxCPMDemo):
             audio = sd.rec(frames, samplerate=samplerate, channels=1, dtype="float32", device=device_index)
             sd.wait()
         except Exception as exc:
-            return gr.update(), f"マイク録音に失敗しました: {exc}"
+            return gr.update(value=None, visible=False), f"マイク録音に失敗しました: {exc}", gr.update(visible=False)
 
         if audio is None or len(audio) == 0:
-            return gr.update(), "録音データが空でした。マイク入力と録音秒数を確認してください。"
+            return gr.update(value=None, visible=False), "録音データが空でした。マイク入力と録音秒数を確認してください。", gr.update(visible=False)
 
         output_path = _output_dir() / f"mic_reference_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}.wav"
         try:
             sf.write(str(output_path), audio, samplerate, subtype="PCM_16")
         except Exception as exc:
-            return gr.update(), f"録音WAVの保存に失敗しました: {exc}"
+            return gr.update(value=None, visible=False), f"録音WAVの保存に失敗しました: {exc}", gr.update(visible=False)
 
-        return gr.update(value=str(output_path), visible=True), f"録音しました: {output_path.name}"
+        return gr.update(value=str(output_path), visible=True), f"録音しました: {output_path.name}", gr.update(visible=True)
 
     def _generate_from_design_history(
         engine_label: str,
@@ -5243,6 +5264,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 interactive=False,
                                 visible=False,
                             )
+                            clone_record_clear = gr.Button("× 録音結果を消す", variant="secondary", size="sm", visible=False)
                             _, clone_recording_script = _add_reference_recording_guide(open_default=False)
                         with gr.Group(visible=False) as clone_history_group:
                             clone_history = gr.Dropdown(
@@ -5835,14 +5857,30 @@ def create_demo_interface(demo: VoxCPMDemo):
                     api_name=None,
                     api_visibility="private",
                 )
-                clone_server_record_btn.click(
+                clone_record_start_event = clone_server_record_btn.click(
+                    fn=_prepare_microphone_recording,
+                    inputs=[clone_record_seconds],
+                    outputs=[clone_record_ref, clone_server_record_status, clone_record_clear],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
+                )
+                clone_record_start_event.then(
                     fn=_record_windows_microphone,
                     inputs=[clone_mic_device, clone_record_seconds],
-                    outputs=[clone_record_ref, clone_server_record_status],
+                    outputs=[clone_record_ref, clone_server_record_status, clone_record_clear],
                     show_progress=True,
                     api_name="record_clone_microphone",
                     concurrency_limit=1,
                     concurrency_id="microphone_recording",
+                )
+                clone_record_clear.click(
+                    fn=_clear_microphone_recording,
+                    inputs=[],
+                    outputs=[clone_record_ref, clone_server_record_status, clone_record_clear],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
                 )
                 clone_history_refresh.click(
                     fn=_refresh_voice_design_history,
@@ -5918,6 +5956,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                                     interactive=False,
                                     visible=False,
                                 )
+                                hifi_record_clear = gr.Button("× 録音結果を消す", variant="secondary", size="sm", visible=False)
                                 _, hifi_recording_script = _add_reference_recording_guide(open_default=False)
                                 hifi_script_to_prompt_btn = gr.Button("録音原稿を文字起こし欄へ入れる", variant="secondary")
                             with gr.Group(visible=False) as hifi_history_group:
@@ -6021,14 +6060,30 @@ def create_demo_interface(demo: VoxCPMDemo):
                     api_name=None,
                     api_visibility="private",
                 )
-                hifi_server_record_btn.click(
+                hifi_record_start_event = hifi_server_record_btn.click(
+                    fn=_prepare_microphone_recording,
+                    inputs=[hifi_record_seconds],
+                    outputs=[hifi_record_ref, hifi_server_record_status, hifi_record_clear],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
+                )
+                hifi_record_start_event.then(
                     fn=_record_windows_microphone,
                     inputs=[hifi_mic_device, hifi_record_seconds],
-                    outputs=[hifi_record_ref, hifi_server_record_status],
+                    outputs=[hifi_record_ref, hifi_server_record_status, hifi_record_clear],
                     show_progress=True,
                     api_name="record_hifi_microphone",
                     concurrency_limit=1,
                     concurrency_id="microphone_recording",
+                )
+                hifi_record_clear.click(
+                    fn=_clear_microphone_recording,
+                    inputs=[],
+                    outputs=[hifi_record_ref, hifi_server_record_status, hifi_record_clear],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
                 )
                 hifi_script_to_prompt_btn.click(
                     fn=_copy_recording_script_to_prompt,
@@ -6279,6 +6334,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             design_reuse_file,
             clone_ref,
             clone_record_ref,
+            clone_record_clear,
             clone_server_record_status,
             clone_history,
             clone_qwen3_ref_text,
@@ -6299,6 +6355,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             clone_lora_jsonl_file,
             hifi_ref,
             hifi_record_ref,
+            hifi_record_clear,
             hifi_server_record_status,
             hifi_history,
             hifi_prompt_text,
