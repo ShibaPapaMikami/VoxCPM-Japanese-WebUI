@@ -197,6 +197,24 @@ Qwen3-TTSは10言語（日本語、英語、中国語、韓国語、ドイツ語
 | Irodori-TTS LoRAファインチューン | クローン出力を学習データ化 | 実験対応。学習データ準備、ドライラン、学習コマンド起動入口、LoRA管理に対応 |
 | 全自動ワークフロー | 本体側の設計に依存 | 未統合。誤操作を避けるため、生成・前処理・学習を段階ごとに確認するUIに分離 |
 
+## 公式機能との差分
+
+2026-06-13時点で、各公式リポジトリ / モデルカードの最新情報を確認した差分です。JP Voice Studioは、VoxCPM2を中心に、Irodori-TTSとQwen3-TTS / VoiceDesignCloner系ワークフローを1つの日本語Web UIで扱いやすくする統合ツールです。各公式プロジェクトの全機能を完全移植するものではありません。
+
+| エンジン | 公式で確認できる主な機能 | JP Voice Studioで対応済み | 今後埋める候補 |
+| --- | --- | --- | --- |
+| VoxCPM2 | 30言語、声のデザイン、制御可能な声クローン、高精度クローン、48kHz出力、ストリーミング、batch CLI、Nano-vLLM / vLLM-Omni本番配信、SFT / LoRA | 声のデザイン、声のクローン、高精度クローン、多言語選択、履歴再利用、録音、WAV保存 | VoxCPM2一括生成、ストリーミング再生、本番配信API連携、SFT / LoRA UI |
+| Irodori-TTS | 日本語TTS、ゼロショット声クローン、絵文字スタイル制御、VoiceDesign専用モデル、Speaker Inversion、v3 Duration Predictor、SilentCipher透かし、公式学習スクリプト | 日本語生成、参照音声クローン、声質ヒント、Irodori LoRA推論、LoRA学習データ準備、学習入口、LoRA管理 | 絵文字スタイル選択UI、VoiceDesign専用モデル対応、Speaker Inversion、透かし表示、公式学習フローの詳細対応 |
+| VoiceDesignCloner / Qwen3-TTS | Qwen3-TTSによる声設計、声ガチャ、コーパス一括音声化、Irodori LoRA、リサンプル、esd.list、Style-Bert-VITS2向け出力、JA / EN / ZH / KO切替、Qwen3-TTS低遅延ストリーミング | Qwen3-TTS簡易連携、生成数指定の声ガチャ、参照音声+文字起こしの簡易クローン、簡易コーパス一括生成、リサンプル、esd.list、Irodori LoRA準備・学習入口 | Style-Bert-VITS2向け出力強化、大量コーパス運用UI、faster-qwen3-tts切替、Qwen3-TTSストリーミング、VoiceDesignCloner本体相当の全自動導線 |
+
+優先して埋める予定:
+
+1. VoxCPM2の一括生成
+2. Irodori-TTSの絵文字スタイル選択
+3. VoiceDesignCloner連携のStyle-Bert-VITS2向け出力強化
+4. VoxCPM2 / Qwen3-TTSのストリーミング再生
+5. Irodori-TTSのSpeaker Inversion / VoiceDesign専用モデル対応
+
 ## 公開・配布について
 
 このリポジトリはApache-2.0ライセンスのOpenBMB/VoxCPMをベースにし、任意エンジンとしてMITライセンスのIrodori-TTS、Apache-2.0ライセンスのQwen3-TTSを利用できます。<br>

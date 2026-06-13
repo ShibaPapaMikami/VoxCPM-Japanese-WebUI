@@ -164,10 +164,7 @@ for _d in _I18N_TRANSLATIONS.values():
 
 I18N = gr.I18n(**_I18N_TRANSLATIONS)
 
-DEFAULT_TARGET_TEXT = (
-    "VoxCPM2 is a creative multilingual TTS model from ModelBest, "
-    "designed to generate highly realistic speech."
-)
+DEFAULT_TARGET_TEXT = "こんにちは。JP Voice Studioの日本語音声生成テストです。自然で聞き取りやすい音声を生成します。"
 
 # ---------- Japanese UI override ----------
 
@@ -189,7 +186,7 @@ _EXAMPLES_FOOTER_JA = (
     "**声の指示例**\n\n"
     "**落ち着いたナレーション**  \n"
     "`声の指示`: `落ち着いた日本語の男性ナレーション。聞き取りやすく、少しゆっくり話す。`  \n"
-    "`読み上げテキスト`: `こんにちは。VoxCPM2の日本語音声生成テストです。`\n\n"
+    "`読み上げテキスト`: `こんにちは。JP Voice Studioの日本語音声生成テストです。`\n\n"
     "**やさしい案内音声**  \n"
     "`声の指示`: `やさしい女性の声。明るく親しみやすい案内口調。`  \n"
     "`読み上げテキスト`: `本日はご利用ありがとうございます。次の画面で内容をご確認ください。`\n\n"
@@ -234,7 +231,7 @@ _I18N_TRANSLATIONS = {
 }
 I18N = gr.I18n(**_I18N_TRANSLATIONS)
 
-DEFAULT_TARGET_TEXT = "こんにちは。VoxCPM2の日本語音声生成テストです。自然で聞き取りやすい音声を生成します。"
+DEFAULT_TARGET_TEXT = "こんにちは。JP Voice Studioの日本語音声生成テストです。自然で聞き取りやすい音声を生成します。"
 
 _CUSTOM_CSS = """
 :root {
@@ -574,6 +571,89 @@ button.record-start-button:hover,
     content: none !important;
     display: none !important;
 }
+.gradio-container .feature-chip-group label input,
+.gradio-container .feature-chip-group input[type="checkbox"],
+.gradio-container .feature-chip-group input[type="radio"],
+.gradio-container #design-voice-features label input,
+.gradio-container #design-voice-features input[type="checkbox"],
+.gradio-container #clone-voice-features label input,
+.gradio-container #clone-voice-features input[type="checkbox"] {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    max-height: 0 !important;
+    max-width: 0 !important;
+    min-height: 0 !important;
+    min-width: 0 !important;
+    opacity: 0 !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    pointer-events: none !important;
+    position: absolute !important;
+    width: 0 !important;
+}
+.gradio-container .feature-chip-group label,
+.gradio-container #design-voice-features label,
+.gradio-container #clone-voice-features label {
+    align-items: center !important;
+    justify-content: center !important;
+    min-height: 2.2rem;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+}
+.gradio-container .feature-chip-group label span::before,
+.gradio-container .feature-chip-group label span::after,
+.gradio-container .feature-chip-group label.selected::before,
+.gradio-container .feature-chip-group label.selected::after,
+.gradio-container #design-voice-features label span::before,
+.gradio-container #design-voice-features label span::after,
+.gradio-container #design-voice-features label.selected::before,
+.gradio-container #design-voice-features label.selected::after,
+.gradio-container #clone-voice-features label span::before,
+.gradio-container #clone-voice-features label span::after,
+.gradio-container #clone-voice-features label.selected::before,
+.gradio-container #clone-voice-features label.selected::after {
+    content: none !important;
+    display: none !important;
+}
+.gradio-container .feature-chip-group label > span:first-child:empty,
+.gradio-container .feature-chip-group label > span:first-child:has(input),
+.gradio-container .feature-chip-group label > div:first-child:empty,
+.gradio-container .feature-chip-group label > div:first-child:has(input),
+.gradio-container #design-voice-features label > span:first-child:empty,
+.gradio-container #design-voice-features label > span:first-child:has(input),
+.gradio-container #design-voice-features label > div:first-child:empty,
+.gradio-container #design-voice-features label > div:first-child:has(input),
+.gradio-container #clone-voice-features label > span:first-child:empty,
+.gradio-container #clone-voice-features label > span:first-child:has(input),
+.gradio-container #clone-voice-features label > div:first-child:empty,
+.gradio-container #clone-voice-features label > div:first-child:has(input) {
+    display: none !important;
+}
+.gradio-container .feature-chip-group label.selected,
+.gradio-container .feature-chip-group label.selected span,
+.gradio-container .feature-chip-group label.selected *,
+.gradio-container #design-voice-features label.selected,
+.gradio-container #design-voice-features label.selected span,
+.gradio-container #design-voice-features label.selected *,
+.gradio-container #clone-voice-features label.selected,
+.gradio-container #clone-voice-features label.selected span,
+.gradio-container #clone-voice-features label.selected * {
+    color: #ffffff !important;
+}
+#design-voice-features label.selected,
+#design-voice-features label.selected span,
+#design-voice-features label.selected *,
+#clone-voice-features label.selected,
+#clone-voice-features label.selected span,
+#clone-voice-features label.selected * {
+    color: #ffffff !important;
+}
 @media (max-width: 640px) {
     .gradio-container .mode-tabs .tab-wrapper {
         align-items: stretch !important;
@@ -754,6 +834,14 @@ _JAPANESE_UI_FIX_JS = r"""
 
   function translateAll() {
     document.querySelectorAll("*").forEach(translateNode);
+    document
+      .querySelectorAll("#design-voice-features label.selected, #clone-voice-features label.selected")
+      .forEach((label) => {
+        label.style.color = "#ffffff";
+        label.querySelectorAll("*").forEach((child) => {
+          child.style.color = "#ffffff";
+        });
+      });
   }
 
   translateAll();
@@ -1016,9 +1104,21 @@ def _build_irodori_caption(
     """Build an Irodori caption/style prompt without changing the spoken text."""
     caption_parts: list[str] = []
     if age_label and age_label != "指定なし":
-        caption_parts.append(f"{age_label}の声")
+        age_hints = {
+            "赤ちゃん": ["赤ちゃんの声", "baby voice"],
+            "子供": ["子供の声", "child voice"],
+            "若者": ["若者の声", "young adult voice"],
+            "大人": ["大人の声", "adult voice"],
+            "老人": ["老人の声", "elderly voice"],
+        }
+        caption_parts.extend(age_hints.get(age_label, [f"{age_label}の声"]))
     if gender_label and gender_label != "指定なし":
-        caption_parts.append(f"{gender_label}の声質")
+        gender_hints = {
+            "男性": ["男性の声", "male voice", "masculine timbre", "lower pitch"],
+            "女性": ["女性の声", "female voice", "feminine timbre", "higher pitch"],
+            "中性的": ["中性的な声", "androgynous voice", "neutral timbre"],
+        }
+        caption_parts.extend(gender_hints.get(gender_label, [f"{gender_label}の声質"]))
     for label in feature_labels or []:
         if label and label != "指定なし":
             caption_parts.append(label)
@@ -4441,6 +4541,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         control_instruction: str,
         target_language: str,
         dit_steps: int,
+        lora_adapter: str = "",
         count: int = 1,
     ) -> str:
         issues = []
@@ -4449,6 +4550,11 @@ def create_demo_interface(demo: VoxCPMDemo):
             issues.append("読み上げテキスト")
         if _engine_is_irodori(engine_label) and _LANGUAGE_HINTS.get(target_language or "") != "Japanese":
             issues.append("Irodori-TTSは日本語を選択してください")
+        if _engine_is_irodori(engine_label):
+            if (lora_adapter or "").strip():
+                notes.append("Irodori LoRA選択中は、年齢・性別指定よりLoRAの声質が優先されることがあります")
+            else:
+                notes.append("Irodoriの年齢・性別は声質ヒントです。完全固定ではないため、必要なら複数候補を試してください")
         if not (control_instruction or "").strip() and not voice_features:
             notes.append("声の指示または特徴を入れると声質が安定しやすいです")
         if _engine_is_qwen3(engine_label) and int(count or 1) > 1:
@@ -4934,6 +5040,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 value=["落ち着いた", "ナレーション", "聞き取りやすい", "ゆっくり"],
                                 label="特徴",
                                 info="複数選べます。矛盾する特徴を同時に選ぶと効果が弱くなることがあります。",
+                                elem_id="design-voice-features",
+                                elem_classes=["feature-chip-group"],
                             )
                         design_control = gr.Textbox(
                             value="低めの落ち着いた日本語の男性ナレーション。大人の男性声で、聞き取りやすく、少しゆっくり話す。",
@@ -4947,7 +5055,11 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 choices=_list_irodori_lora_adapters(),
                                 value="",
                                 label="Irodori LoRAアダプタ",
-                                info="学習済みLoRAをIrodori-TTS推論に適用します。",
+                                info="学習済みLoRAをIrodori-TTS推論に適用します。性別や年齢よりLoRAの声質が優先されることがあります。",
+                            )
+                            gr.Markdown(
+                                "LoRAを選ぶと、そのLoRAに含まれる声質が強く反映されます。"
+                                "指定した性別と違う声になる場合は「使用しない」を選んで生成してください。"
                             )
                             design_irodori_lora_refresh = gr.Button("LoRA一覧を更新", variant="secondary", size="sm")
                         design_intonation = gr.State("")
@@ -5423,6 +5535,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 choices=_VOICE_FEATURE_LABELS,
                                 value=[],
                                 label="特徴",
+                                elem_id="clone-voice-features",
+                                elem_classes=["feature-chip-group"],
                             )
                             clone_irodori_lora = gr.Dropdown(
                                 choices=_list_irodori_lora_adapters(),
@@ -6314,6 +6428,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             design_control,
             design_language,
             design_steps,
+            design_irodori_lora,
         ]
         for trigger in design_preflight_inputs:
             trigger.change(
@@ -6334,6 +6449,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             design_control,
             design_language,
             design_steps,
+            design_irodori_lora,
             design_qwen3_count,
         ]
         for trigger in design_qwen3_preflight_inputs:
