@@ -3411,6 +3411,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             gr.update(value=None),  # design_reuse_output
             gr.update(value=None),  # design_reuse_file
             gr.update(value=None),  # clone_ref
+            gr.update(value=None),  # clone_record_ref
+            gr.update(value=""),  # clone_server_record_status
             gr.update(value=None),  # clone_history
             gr.update(value=""),  # clone_qwen3_ref_text
             gr.update(value=None),  # clone_output
@@ -3429,6 +3431,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             gr.update(value=None),  # clone_lora_lab_text_file
             gr.update(value=None),  # clone_lora_jsonl_file
             gr.update(value=None),  # hifi_ref
+            gr.update(value=None),  # hifi_record_ref
+            gr.update(value=""),  # hifi_server_record_status
             gr.update(value=None),  # hifi_history
             gr.update(value=""),  # hifi_prompt_text
             gr.update(value=""),  # hifi_transcribe_status
@@ -3783,6 +3787,93 @@ def create_demo_interface(demo: VoxCPMDemo):
             gr.update(visible=source_choice == _SOURCE_RECORD),
             gr.update(visible=source_choice == _SOURCE_HISTORY),
         )
+
+    def _microphone_dependency_message() -> str:
+        return (
+            "Windowsマイク録音を使うには `sounddevice` が必要です。"
+            "未導入の場合は `.\\.venv\\Scripts\\python.exe -m pip install sounddevice` を実行してください。"
+        )
+
+    def _microphone_device_choices() -> tuple[list[str], Optional[str], str]:
+        try:
+            import sounddevice as sd
+        except Exception:
+            return [], None, _microphone_dependency_message()
+
+        try:
+            devices = sd.query_devices()
+            hostapis = sd.query_hostapis()
+        except Exception as exc:
+            return [], None, f"マイク一覧を取得できませんでした: {exc}"
+
+        choices = []
+        for index, device in enumerate(devices):
+            input_channels = int(device.get("max_input_channels") or 0)
+            if input_channels <= 0:
+                continue
+            hostapi_name = ""
+            hostapi_index = device.get("hostapi")
+            if hostapi_index is not None:
+                try:
+                    hostapi_name = hostapis[int(hostapi_index)].get("name", "")
+                except Exception:
+                    hostapi_name = ""
+            name = str(device.get("name") or f"入力デバイス {index}")
+            samplerate = int(float(device.get("default_samplerate") or 48000))
+            suffix = f" / {hostapi_name}" if hostapi_name else ""
+            choices.append(f"{index}: {name}{suffix} ({input_channels}ch, {samplerate}Hz)")
+
+        if not choices:
+            return [], None, "Windows側で入力マイクが見つかりませんでした。Windowsのサウンド設定で入力デバイスを確認してください。"
+
+        default_value = choices[0]
+        try:
+            default_input = sd.default.device[0]
+            if default_input is not None and int(default_input) >= 0:
+                prefix = f"{int(default_input)}:"
+                default_value = next((choice for choice in choices if choice.startswith(prefix)), default_value)
+        except Exception:
+            pass
+        return choices, default_value, f"利用できるマイクを {len(choices)} 件見つけました。"
+
+    def _microphone_dropdown_update():
+        choices, value, status = _microphone_device_choices()
+        return gr.update(choices=choices, value=value), status
+
+    def _parse_microphone_device_index(device_label: str) -> int:
+        match = re.match(r"\s*(\d+)\s*:", device_label or "")
+        if not match:
+            raise ValueError("録音に使うWindowsマイクを選択してください。")
+        return int(match.group(1))
+
+    def _record_windows_microphone(device_label: str, duration_seconds: float):
+        try:
+            import sounddevice as sd
+            import soundfile as sf
+        except Exception:
+            return gr.update(), _microphone_dependency_message()
+
+        device_index = _parse_microphone_device_index(device_label)
+        duration = max(1.0, min(float(duration_seconds or 10), 120.0))
+        try:
+            device_info = sd.query_devices(device_index)
+            samplerate = int(float(device_info.get("default_samplerate") or 48000))
+            frames = int(round(duration * samplerate))
+            audio = sd.rec(frames, samplerate=samplerate, channels=1, dtype="float32", device=device_index)
+            sd.wait()
+        except Exception as exc:
+            return gr.update(), f"Windowsマイク録音に失敗しました: {exc}"
+
+        if audio is None or len(audio) == 0:
+            return gr.update(), "録音データが空でした。マイク入力と録音秒数を確認してください。"
+
+        output_path = _output_dir() / f"mic_reference_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}.wav"
+        try:
+            sf.write(str(output_path), audio, samplerate, subtype="PCM_16")
+        except Exception as exc:
+            return gr.update(), f"録音WAVの保存に失敗しました: {exc}"
+
+        return str(output_path), f"録音しました: {output_path.name}"
 
     def _generate_from_design_history(
         engine_label: str,
@@ -5083,10 +5174,28 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 label="参照ファイル",
                             )
                         with gr.Group(visible=False) as clone_record_group:
+                            clone_mic_choices, clone_mic_value, clone_mic_status_text = _microphone_device_choices()
+                            clone_mic_device = gr.Dropdown(
+                                choices=clone_mic_choices,
+                                value=clone_mic_value,
+                                label="Windowsマイク",
+                                info="ブラウザでマイクが見つからない場合も、Windowsの入力デバイスから直接録音できます。",
+                            )
+                            with gr.Row():
+                                clone_record_seconds = gr.Slider(
+                                    minimum=3,
+                                    maximum=60,
+                                    value=12,
+                                    step=1,
+                                    label="録音秒数",
+                                )
+                                clone_mic_refresh = gr.Button("マイク一覧を更新", variant="secondary")
+                            clone_server_record_btn = gr.Button("Windowsマイクで録音", variant="primary")
+                            clone_server_record_status = gr.Markdown(clone_mic_status_text)
                             clone_record_ref = gr.Audio(
-                                sources=["microphone"],
+                                sources=["upload"],
                                 type="filepath",
-                                label="マイク録音",
+                                label="録音結果 / WAV参照",
                             )
                             _, clone_recording_script = _add_reference_recording_guide(open_default=False)
                         with gr.Group(visible=False) as clone_history_group:
@@ -5672,6 +5781,23 @@ def create_demo_interface(demo: VoxCPMDemo):
                     api_name=None,
                     api_visibility="private",
                 )
+                clone_mic_refresh.click(
+                    fn=_microphone_dropdown_update,
+                    inputs=[],
+                    outputs=[clone_mic_device, clone_server_record_status],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
+                )
+                clone_server_record_btn.click(
+                    fn=_record_windows_microphone,
+                    inputs=[clone_mic_device, clone_record_seconds],
+                    outputs=[clone_record_ref, clone_server_record_status],
+                    show_progress=True,
+                    api_name="record_clone_microphone",
+                    concurrency_limit=1,
+                    concurrency_id="microphone_recording",
+                )
                 clone_history_refresh.click(
                     fn=_refresh_voice_design_history,
                     inputs=[],
@@ -5722,10 +5848,28 @@ def create_demo_interface(demo: VoxCPMDemo):
                                     label="参照ファイル",
                                 )
                             with gr.Group(visible=False) as hifi_record_group:
+                                hifi_mic_choices, hifi_mic_value, hifi_mic_status_text = _microphone_device_choices()
+                                hifi_mic_device = gr.Dropdown(
+                                    choices=hifi_mic_choices,
+                                    value=hifi_mic_value,
+                                    label="Windowsマイク",
+                                    info="ブラウザでマイクが見つからない場合も、Windowsの入力デバイスから直接録音できます。",
+                                )
+                                with gr.Row():
+                                    hifi_record_seconds = gr.Slider(
+                                        minimum=3,
+                                        maximum=60,
+                                        value=12,
+                                        step=1,
+                                        label="録音秒数",
+                                    )
+                                    hifi_mic_refresh = gr.Button("マイク一覧を更新", variant="secondary")
+                                hifi_server_record_btn = gr.Button("Windowsマイクで録音", variant="primary")
+                                hifi_server_record_status = gr.Markdown(hifi_mic_status_text)
                                 hifi_record_ref = gr.Audio(
-                                    sources=["microphone"],
+                                    sources=["upload"],
                                     type="filepath",
-                                    label="マイク録音",
+                                    label="録音結果 / WAV参照",
                                 )
                                 _, hifi_recording_script = _add_reference_recording_guide(open_default=False)
                                 hifi_script_to_prompt_btn = gr.Button("録音原稿を文字起こし欄へ入れる", variant="secondary")
@@ -5821,6 +5965,23 @@ def create_demo_interface(demo: VoxCPMDemo):
                     show_progress=False,
                     api_name=None,
                     api_visibility="private",
+                )
+                hifi_mic_refresh.click(
+                    fn=_microphone_dropdown_update,
+                    inputs=[],
+                    outputs=[hifi_mic_device, hifi_server_record_status],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
+                )
+                hifi_server_record_btn.click(
+                    fn=_record_windows_microphone,
+                    inputs=[hifi_mic_device, hifi_record_seconds],
+                    outputs=[hifi_record_ref, hifi_server_record_status],
+                    show_progress=True,
+                    api_name="record_hifi_microphone",
+                    concurrency_limit=1,
+                    concurrency_id="microphone_recording",
                 )
                 hifi_script_to_prompt_btn.click(
                     fn=_copy_recording_script_to_prompt,
@@ -6070,6 +6231,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             design_reuse_output,
             design_reuse_file,
             clone_ref,
+            clone_record_ref,
+            clone_server_record_status,
             clone_history,
             clone_qwen3_ref_text,
             clone_output,
@@ -6088,6 +6251,8 @@ def create_demo_interface(demo: VoxCPMDemo):
             clone_lora_lab_text_file,
             clone_lora_jsonl_file,
             hifi_ref,
+            hifi_record_ref,
+            hifi_server_record_status,
             hifi_history,
             hifi_prompt_text,
             hifi_transcribe_status,
