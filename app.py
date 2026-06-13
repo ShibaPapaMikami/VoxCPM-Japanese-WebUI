@@ -367,9 +367,23 @@ body,
     content: none !important;
     display: none !important;
 }
+.gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label.selected::before,
+.gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label.selected span::before,
+.gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label.selected span::after {
+    content: none !important;
+    display: none !important;
+}
 .gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label.selected span,
 .gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label.selected * {
     color: #ffffff !important;
+}
+.gradio-container fieldset.engine-tabs.source-tabs > .wrap:not([data-testid="status-tracker"]) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.gradio-container fieldset.engine-tabs.source-tabs > .wrap:not([data-testid="status-tracker"]) label {
+    min-width: 0;
+    padding-left: 0.45rem !important;
+    padding-right: 0.45rem !important;
 }
 .mode-heading {
     border-top: 1px solid var(--jp-border);
@@ -404,30 +418,6 @@ body,
     color: var(--jp-muted);
     font-size: 0.86rem;
     margin-top: 0.15rem;
-}
-.source-options {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
-    gap: 0.5rem;
-    margin: 0.35rem 0 0.8rem 0;
-}
-.source-option {
-    background: #ffffff;
-    border: 1px solid var(--jp-border);
-    border-radius: 8px;
-    padding: 0.7rem 0.75rem;
-}
-.source-option strong {
-    display: block;
-    color: var(--jp-text);
-    font-size: 0.9rem;
-}
-.source-option span {
-    display: block;
-    color: var(--jp-muted);
-    font-size: 0.82rem;
-    line-height: 1.45;
-    margin-top: 0.2rem;
 }
 .gradio-container .mode-tabs.tabs {
     gap: 0.7rem;
@@ -3770,6 +3760,30 @@ def create_demo_interface(demo: VoxCPMDemo):
             )
         )
 
+    _SOURCE_UPLOAD = "参照ファイル"
+    _SOURCE_RECORD = "マイク録音"
+    _SOURCE_HISTORY = "履歴から選択"
+    _SOURCE_CHOICES = [_SOURCE_UPLOAD, _SOURCE_RECORD, _SOURCE_HISTORY]
+
+    def _selected_reference_inputs(
+        source_choice: str,
+        upload_ref: Optional[str],
+        record_ref: Optional[str],
+        history_ref: Optional[str],
+    ) -> tuple[Optional[str], Optional[str]]:
+        if source_choice == _SOURCE_RECORD:
+            return record_ref, None
+        if source_choice == _SOURCE_HISTORY:
+            return None, history_ref
+        return upload_ref, None
+
+    def _source_visibility_updates(source_choice: str):
+        return (
+            gr.update(visible=source_choice == _SOURCE_UPLOAD),
+            gr.update(visible=source_choice == _SOURCE_RECORD),
+            gr.update(visible=source_choice == _SOURCE_HISTORY),
+        )
+
     def _generate_from_design_history(
         engine_label: str,
         history_wav: Optional[str],
@@ -3834,7 +3848,9 @@ def create_demo_interface(demo: VoxCPMDemo):
         control_instruction: str,
         intonation_instruction: str,
         word_accent_instruction: str,
-        ref_wav: Optional[str],
+        source_choice: str,
+        upload_ref_wav: Optional[str],
+        record_ref_wav: Optional[str],
         history_wav: Optional[str],
         qwen3_ref_text: str,
         target_language: str,
@@ -3845,6 +3861,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         denoise: bool,
         dit_steps: int,
     ):
+        ref_wav, history_wav = _selected_reference_inputs(source_choice, upload_ref_wav, record_ref_wav, history_wav)
         ref_source = _resolve_reference_audio(ref_wav, history_wav, "声のクローン")
         if _engine_is_irodori(engine_label):
             _ensure_irodori_japanese(target_language)
@@ -3969,7 +3986,9 @@ def create_demo_interface(demo: VoxCPMDemo):
 
     def _generate_qwen3_corpus_batch(
         engine_label: str,
-        ref_wav: Optional[str],
+        source_choice: str,
+        upload_ref_wav: Optional[str],
+        record_ref_wav: Optional[str],
         history_wav: Optional[str],
         qwen3_ref_text: str,
         target_language: str,
@@ -3983,6 +4002,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         if not _engine_is_qwen3(engine_label):
             raise ValueError("コーパス一括音声化はVoiceDesignCloner連携（Qwen3-TTS・簡易）で利用できます。")
 
+        ref_wav, history_wav = _selected_reference_inputs(source_choice, upload_ref_wav, record_ref_wav, history_wav)
         ref_source = _resolve_reference_audio(ref_wav, history_wav, "コーパス一括音声化")
         reference_text = _effective_qwen3_reference_text(ref_wav, history_wav, qwen3_ref_text)
         if not reference_text:
@@ -4033,7 +4053,9 @@ def create_demo_interface(demo: VoxCPMDemo):
     def _generate_high_fidelity_clone(
         engine_label: str,
         text: str,
-        ref_wav: Optional[str],
+        source_choice: str,
+        upload_ref_wav: Optional[str],
+        record_ref_wav: Optional[str],
         history_wav: Optional[str],
         prompt_text_value: str,
         prevent_leading_mix: bool,
@@ -4046,6 +4068,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         denoise: bool,
         dit_steps: int,
     ):
+        ref_wav, history_wav = _selected_reference_inputs(source_choice, upload_ref_wav, record_ref_wav, history_wav)
         ref_source = _resolve_reference_audio(ref_wav, history_wav, "高精度クローン")
         if _engine_is_irodori(engine_label):
             raise ValueError(
@@ -4190,7 +4213,9 @@ def create_demo_interface(demo: VoxCPMDemo):
     def _clone_preflight(
         engine_label: str,
         text: str,
-        ref_wav: Optional[str],
+        source_choice: str,
+        upload_ref_wav: Optional[str],
+        record_ref_wav: Optional[str],
         history_wav: Optional[str],
         qwen3_ref_text: str,
         target_language: str,
@@ -4198,8 +4223,9 @@ def create_demo_interface(demo: VoxCPMDemo):
     ) -> str:
         issues = []
         notes = []
+        ref_wav, history_wav = _selected_reference_inputs(source_choice, upload_ref_wav, record_ref_wav, history_wav)
         if not ref_wav and not history_wav:
-            issues.append("参照音声または履歴の声")
+            issues.append(f"{source_choice or _SOURCE_UPLOAD}の音源")
         if not (text or "").strip():
             issues.append("読み上げテキスト")
         if _engine_is_irodori(engine_label) and _LANGUAGE_HINTS.get(target_language or "") != "Japanese":
@@ -4221,7 +4247,9 @@ def create_demo_interface(demo: VoxCPMDemo):
 
     def _corpus_preflight(
         engine_label: str,
-        ref_wav: Optional[str],
+        source_choice: str,
+        upload_ref_wav: Optional[str],
+        record_ref_wav: Optional[str],
         history_wav: Optional[str],
         qwen3_ref_text: str,
         target_language: str,
@@ -4231,6 +4259,7 @@ def create_demo_interface(demo: VoxCPMDemo):
     ) -> str:
         issues = []
         notes = []
+        ref_wav, history_wav = _selected_reference_inputs(source_choice, upload_ref_wav, record_ref_wav, history_wav)
         if not _engine_is_qwen3(engine_label):
             issues.append("VoiceDesignCloner連携（Qwen3-TTS・簡易）を選択")
         if not ref_wav and not history_wav:
@@ -4256,7 +4285,9 @@ def create_demo_interface(demo: VoxCPMDemo):
     def _hifi_preflight(
         engine_label: str,
         text: str,
-        ref_wav: Optional[str],
+        source_choice: str,
+        upload_ref_wav: Optional[str],
+        record_ref_wav: Optional[str],
         history_wav: Optional[str],
         prompt_text_value: str,
         prevent_leading_mix: bool,
@@ -4264,10 +4295,11 @@ def create_demo_interface(demo: VoxCPMDemo):
     ) -> str:
         issues = []
         notes = []
+        ref_wav, history_wav = _selected_reference_inputs(source_choice, upload_ref_wav, record_ref_wav, history_wav)
         if _engine_is_irodori(engine_label) or _engine_is_qwen3(engine_label):
             issues.append("高精度クローンはVoxCPM2を選択")
         if not ref_wav and not history_wav:
-            issues.append("参照音声または履歴の声")
+            issues.append(f"{source_choice or _SOURCE_UPLOAD}の音源")
         if not (text or "").strip():
             issues.append("続けて読み上げるテキスト")
         if not prevent_leading_mix and not (prompt_text_value or "").strip():
@@ -4281,7 +4313,13 @@ def create_demo_interface(demo: VoxCPMDemo):
             notes,
         )
 
-    def _transcribe_reference(audio_path: Optional[str], history_wav: Optional[str] = None):
+    def _transcribe_reference(
+        source_choice: str,
+        upload_ref_wav: Optional[str],
+        record_ref_wav: Optional[str],
+        history_wav: Optional[str] = None,
+    ):
+        audio_path, history_wav = _selected_reference_inputs(source_choice, upload_ref_wav, record_ref_wav, history_wav)
         try:
             ref_source = _resolve_reference_audio(audio_path, history_wav, "自動文字起こし")
         except ValueError:
@@ -4500,20 +4538,6 @@ def create_demo_interface(demo: VoxCPMDemo):
             '<div class="step-heading">'
             f'<strong>Step {number} {html.escape(title)}</strong>'
             f'<span>{html.escape(description)}</span>'
-            '</div>'
-        )
-
-    def _source_option_cards(transcript_note: str = ""):
-        note = f"<span>{html.escape(transcript_note)}</span>" if transcript_note else ""
-        gr.HTML(
-            '<div class="source-options">'
-            '<div class="source-option"><strong>参照ファイル</strong><span>手元のWAVなどをアップロードします。'
-            '必要な場合は、ファイル内で話している内容を文字起こし欄に入力します。</span></div>'
-            '<div class="source-option"><strong>マイク録音</strong><span>その場で声を録音します。'
-            '録音原稿を使う場合は下の折りたたみを開きます。</span></div>'
-            '<div class="source-option"><strong>履歴から選択</strong><span>声のデザイン履歴に保存された声を使います。'
-            '履歴に文字起こしがある場合は自動利用できます。</span>'
-            f'{note}</div>'
             '</div>'
         )
 
@@ -5046,20 +5070,33 @@ def create_demo_interface(demo: VoxCPMDemo):
                 with gr.Row():
                     with gr.Column():
                         _step_header(3, "音源を選ぶ", "使う音源の入口を1つ選びます。")
-                        _source_option_cards("Qwen3-TTSでは参照音声で話している内容の入力が必要です。")
-                        clone_ref = gr.Audio(
-                            sources=["upload", "microphone"],
-                            type="filepath",
-                            label="参照音声（アップロード / マイク録音）",
+                        clone_source_choice = gr.Radio(
+                            choices=_SOURCE_CHOICES,
+                            value=_SOURCE_UPLOAD,
+                            label="音源の入口",
+                            elem_classes=["engine-tabs", "source-tabs"],
                         )
-                        _, clone_recording_script = _add_reference_recording_guide(open_default=False)
-                        clone_history = gr.Dropdown(
-                            choices=_list_voice_design_history(),
-                            value=None,
-                            label="声のデザイン履歴から選択（任意）",
-                            info="参照音声をアップロードしていない場合、この履歴の声を使います。",
-                        )
-                        clone_history_refresh = gr.Button("履歴を更新", variant="secondary", size="sm")
+                        with gr.Group() as clone_upload_group:
+                            clone_ref = gr.Audio(
+                                sources=["upload"],
+                                type="filepath",
+                                label="参照ファイル",
+                            )
+                        with gr.Group(visible=False) as clone_record_group:
+                            clone_record_ref = gr.Audio(
+                                sources=["microphone"],
+                                type="filepath",
+                                label="マイク録音",
+                            )
+                            _, clone_recording_script = _add_reference_recording_guide(open_default=False)
+                        with gr.Group(visible=False) as clone_history_group:
+                            clone_history = gr.Dropdown(
+                                choices=_list_voice_design_history(),
+                                value=None,
+                                label="声のデザイン履歴から選択",
+                                info="この履歴の声を参照音源として使います。",
+                            )
+                            clone_history_refresh = gr.Button("履歴を更新", variant="secondary", size="sm")
                         with gr.Group(visible=False) as clone_qwen3_ref_text_group:
                             gr.Markdown(
                                 "参照ファイルを使う場合は、そのファイルで実際に話している内容を入力してください。"
@@ -5132,6 +5169,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                             _clone_preflight(
                                 _ENGINE_VOXCPM,
                                 "これは参照音声を使った声のクローン生成テストです。",
+                                _SOURCE_UPLOAD,
+                                None,
                                 None,
                                 None,
                                 "",
@@ -5182,6 +5221,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                             clone_corpus_preflight = gr.Markdown(
                                 _corpus_preflight(
                                     _ENGINE_QWEN3,
+                                    _SOURCE_UPLOAD,
+                                    None,
                                     None,
                                     None,
                                     "",
@@ -5408,7 +5449,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                         clone_control,
                         clone_intonation,
                         clone_word_accent,
+                        clone_source_choice,
                         clone_ref,
+                        clone_record_ref,
                         clone_history,
                         clone_qwen3_ref_text,
                         clone_language,
@@ -5436,7 +5479,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                     fn=_generate_qwen3_corpus_batch,
                     inputs=[
                         engine_selector,
+                        clone_source_choice,
                         clone_ref,
+                        clone_record_ref,
                         clone_history,
                         clone_qwen3_ref_text,
                         clone_language,
@@ -5619,6 +5664,14 @@ def create_demo_interface(demo: VoxCPMDemo):
                     api_name=None,
                     api_visibility="private",
                 )
+                clone_source_choice.change(
+                    fn=_source_visibility_updates,
+                    inputs=[clone_source_choice],
+                    outputs=[clone_upload_group, clone_record_group, clone_history_group],
+                    show_progress=False,
+                    api_name=None,
+                    api_visibility="private",
+                )
                 clone_history_refresh.click(
                     fn=_refresh_voice_design_history,
                     inputs=[],
@@ -5656,21 +5709,34 @@ def create_demo_interface(demo: VoxCPMDemo):
                     with gr.Row():
                         with gr.Column():
                             _step_header(3, "音源を選ぶ", "使う音源の入口を1つ選びます。")
-                            _source_option_cards("精密では参照音声で話している内容の文字起こしが重要です。")
-                            hifi_ref = gr.Audio(
-                                sources=["upload", "microphone"],
-                                type="filepath",
-                                label="参照音声（アップロード / マイク録音）",
+                            hifi_source_choice = gr.Radio(
+                                choices=_SOURCE_CHOICES,
+                                value=_SOURCE_UPLOAD,
+                                label="音源の入口",
+                                elem_classes=["engine-tabs", "source-tabs"],
                             )
-                            hifi_history = gr.Dropdown(
-                                choices=_list_voice_design_history(),
-                                value=None,
-                                label="声のデザイン履歴から選択（任意）",
-                                info="参照音声をアップロードしていない場合、この履歴の声を使います。",
-                            )
-                            hifi_history_refresh = gr.Button("履歴を更新", variant="secondary", size="sm")
-                            _, hifi_recording_script = _add_reference_recording_guide(open_default=False)
-                            hifi_script_to_prompt_btn = gr.Button("録音原稿を文字起こし欄へ入れる", variant="secondary")
+                            with gr.Group() as hifi_upload_group:
+                                hifi_ref = gr.Audio(
+                                    sources=["upload"],
+                                    type="filepath",
+                                    label="参照ファイル",
+                                )
+                            with gr.Group(visible=False) as hifi_record_group:
+                                hifi_record_ref = gr.Audio(
+                                    sources=["microphone"],
+                                    type="filepath",
+                                    label="マイク録音",
+                                )
+                                _, hifi_recording_script = _add_reference_recording_guide(open_default=False)
+                                hifi_script_to_prompt_btn = gr.Button("録音原稿を文字起こし欄へ入れる", variant="secondary")
+                            with gr.Group(visible=False) as hifi_history_group:
+                                hifi_history = gr.Dropdown(
+                                    choices=_list_voice_design_history(),
+                                    value=None,
+                                    label="声のデザイン履歴から選択",
+                                    info="この履歴の声を参照音源として使います。",
+                                )
+                                hifi_history_refresh = gr.Button("履歴を更新", variant="secondary", size="sm")
                             _step_header(4, "生成設定", "参照音声の文字起こし、発話言語、続けて読み上げるテキスト、読み方調整、保存ファイル名を設定します。")
                             hifi_language = _language_dropdown()
                             hifi_prompt_text = gr.Textbox(
@@ -5713,6 +5779,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 _hifi_preflight(
                                     _ENGINE_VOXCPM,
                                     "これは高精度クローンを使った音声生成テストです。",
+                                    _SOURCE_UPLOAD,
+                                    None,
                                     None,
                                     None,
                                     "",
@@ -5732,7 +5800,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                             hifi_history_status = gr.Markdown("")
                 hifi_transcribe_event = hifi_transcribe_btn.click(
                     fn=_transcribe_reference,
-                    inputs=[hifi_ref, hifi_history],
+                    inputs=[hifi_source_choice, hifi_ref, hifi_record_ref, hifi_history],
                     outputs=[hifi_prompt_text, hifi_transcribe_status],
                     show_progress=True,
                     api_name="transcribe_reference",
@@ -5743,6 +5811,14 @@ def create_demo_interface(demo: VoxCPMDemo):
                 hifi_transcribe_stop_btn.click(
                     fn=None,
                     cancels=[hifi_transcribe_event],
+                    api_name=None,
+                    api_visibility="private",
+                )
+                hifi_source_choice.change(
+                    fn=_source_visibility_updates,
+                    inputs=[hifi_source_choice],
+                    outputs=[hifi_upload_group, hifi_record_group, hifi_history_group],
+                    show_progress=False,
                     api_name=None,
                     api_visibility="private",
                 )
@@ -5773,7 +5849,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                     inputs=[
                         engine_selector,
                         hifi_text,
+                        hifi_source_choice,
                         hifi_ref,
+                        hifi_record_ref,
                         hifi_history,
                         hifi_prompt_text,
                         hifi_prevent_leading_mix,
@@ -5884,7 +5962,9 @@ def create_demo_interface(demo: VoxCPMDemo):
         clone_preflight_inputs = [
             engine_selector,
             clone_text,
+            clone_source_choice,
             clone_ref,
+            clone_record_ref,
             clone_history,
             clone_qwen3_ref_text,
             clone_language,
@@ -5902,7 +5982,9 @@ def create_demo_interface(demo: VoxCPMDemo):
 
         clone_corpus_preflight_inputs = [
             engine_selector,
+            clone_source_choice,
             clone_ref,
+            clone_record_ref,
             clone_history,
             clone_qwen3_ref_text,
             clone_language,
@@ -5923,7 +6005,9 @@ def create_demo_interface(demo: VoxCPMDemo):
         hifi_preflight_inputs = [
             engine_selector,
             hifi_text,
+            hifi_source_choice,
             hifi_ref,
+            hifi_record_ref,
             hifi_history,
             hifi_prompt_text,
             hifi_prevent_leading_mix,
