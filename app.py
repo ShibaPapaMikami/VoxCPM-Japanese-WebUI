@@ -3,6 +3,7 @@ import queue
 import re
 import sys
 import json
+import html
 import logging
 import shutil
 import subprocess
@@ -219,6 +220,8 @@ _I18N_JA = {
     "dit_steps_info": "ステップ数を増やすと品質が上がる場合がありますが、生成は遅くなります。",
     "usage_instructions": _USAGE_INSTRUCTIONS_JA,
     "examples_footer": _EXAMPLES_FOOTER_JA,
+    "Trim": "切り取り",
+    "Cancel": "キャンセル",
 }
 
 _I18N_TRANSLATIONS = {
@@ -390,6 +393,24 @@ body,
     color: var(--jp-muted);
     font-size: 0.92rem;
 }
+.step-heading {
+    margin: 0.9rem 0 0.55rem 0;
+    padding: 0.65rem 0.75rem;
+    border-left: 4px solid var(--jp-accent);
+    background: #f8fbff;
+    border-radius: 6px;
+}
+.step-heading strong {
+    display: block;
+    color: var(--jp-text);
+    font-size: 0.95rem;
+}
+.step-heading span {
+    display: block;
+    color: var(--jp-muted);
+    font-size: 0.86rem;
+    margin-top: 0.15rem;
+}
 .gradio-container .mode-tabs.tabs {
     gap: 0.7rem;
 }
@@ -426,11 +447,14 @@ body,
     border-radius: 0 6px 6px 0 !important;
 }
 .gradio-container .mode-tabs button[role="tab"][aria-selected="true"] {
-    background: var(--jp-surface) !important;
-    color: var(--jp-accent) !important;
+    background: var(--jp-accent) !important;
+    color: #ffffff !important;
     border-color: var(--jp-accent) !important;
-    box-shadow: inset 0 -3px 0 var(--jp-accent), 0 1px 4px rgba(37, 99, 235, 0.12);
+    box-shadow: inset 0 -3px 0 #ffffff, 0 1px 4px rgba(37, 99, 235, 0.16);
     z-index: 1;
+}
+.gradio-container .mode-tabs button[role="tab"][aria-selected="true"] * {
+    color: #ffffff !important;
 }
 .gradio-container .mode-tabs button[role="tab"][aria-selected="true"]::after {
     content: none !important;
@@ -582,6 +606,8 @@ _JAPANESE_UI_FIX_JS = r"""
     ["Adjust volume", "音量を調整"],
     ["High volume", "大音量"],
     ["No audio", "音声はまだありません"],
+    ["Trim", "切り取り"],
+    ["Cancel", "キャンセル"],
   ]);
 
   function translateValue(value) {
@@ -4418,7 +4444,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         return accent_text
 
     def _advanced_settings(include_denoise: bool = False, cfg_default: float = 2.0):
-        with gr.Accordion("詳細設定", open=False):
+        with gr.Accordion("Step 5 生成詳細設定", open=False):
             denoise_control = None
             if include_denoise:
                 denoise_control = gr.Checkbox(
@@ -4450,6 +4476,14 @@ def create_demo_interface(demo: VoxCPMDemo):
                 info="増やすと品質が上がる場合がありますが、生成は遅くなります。",
             )
         return denoise_control, normalize_control, cfg_control, steps_control
+
+    def _step_header(number: int, title: str, description: str):
+        gr.HTML(
+            '<div class="step-heading">'
+            f'<strong>Step {number} {html.escape(title)}</strong>'
+            f'<span>{html.escape(description)}</span>'
+            '</div>'
+        )
 
     _RECORDING_SCRIPT_PRESETS = {
         "落ち着いたナレーション": (
@@ -4486,10 +4520,11 @@ def create_demo_interface(demo: VoxCPMDemo):
         return script, "録音原稿を参照音声の文字起こし欄へ入れました。録音で読んだ内容と一致しているか確認してください。"
 
     def _add_reference_recording_guide(open_default: bool = False):
-        with gr.Accordion("参照音声を録音する", open=open_default):
+        with gr.Accordion("マイク録音用の読み上げ原稿", open=open_default):
             gr.Markdown(
+                "マイクで参照音声を録音するときだけ使います。"
                 "目安は5〜30秒です。静かな場所で、BGMなし、1人の声だけを録音してください。"
-                "声を作り込みすぎず、普段の話し方で読むと安定しやすくなります。"
+                "アップロード音声を使う場合は、その音声で実際に話している内容を文字起こし欄に入力してください。"
             )
             preset = gr.Dropdown(
                 choices=_RECORDING_SCRIPT_LABELS,
@@ -4515,7 +4550,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         app_header = gr.HTML(_app_header_html(_ENGINE_VOXCPM))
         gr.Markdown("**音声エンジンを選び、続けて使う機能を選んでください。** 各画面には、その生成方法に必要な入力だけを表示しています。")
 
-        with gr.Accordion("音声エンジン", open=True):
+        with gr.Accordion("Step 1 音声エンジンの選択", open=True):
             engine_selector = gr.Radio(
                 choices=_ENGINE_LABELS,
                 value=_ENGINE_VOXCPM,
@@ -4527,7 +4562,7 @@ def create_demo_interface(demo: VoxCPMDemo):
 
         gr.HTML(
             '<div class="mode-heading">'
-            '<h2>使う機能を選ぶ</h2>'
+            '<h2>Step 2 使う機能を選ぶ</h2>'
             '<p>設計=声のデザイン、クローン=参照音声、精密=高精度クローン。選択中の音声エンジンで使える機能だけが表示されます。</p>'
             '</div>'
         )
@@ -4545,6 +4580,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                 )
                 with gr.Row():
                     with gr.Column():
+                        _step_header(3, "音源参照", "声デザインでは参照音声は使いません。声の特徴を文章と選択項目で指定します。")
+                        _step_header(4, "生成設定", "発話言語、声の指示、アクセント調整、読み方調整、読み上げテキスト、保存ファイル名を設定します。")
                         design_language = _language_dropdown()
                         with gr.Accordion("声の基本設定", open=True):
                             with gr.Row() as design_voice_age_gender_row:
@@ -4602,6 +4639,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 include_denoise=False,
                                 cfg_default=2.6,
                             )
+                        _step_header(6, "生成", "設定を確認して、この声を生成します。")
                         with gr.Row():
                             design_btn = gr.Button("この声を生成", variant="primary", size="lg")
                             design_stop_btn = gr.Button("停止", variant="stop")
@@ -4981,12 +5019,13 @@ def create_demo_interface(demo: VoxCPMDemo):
                 )
                 with gr.Row():
                     with gr.Column():
+                        _step_header(3, "音源を選ぶ", "参照ファイルをアップロード、マイクで録音、または声のデザイン履歴から選びます。Qwen3-TTSでは参照音声で話している内容の入力が必要です。")
                         clone_ref = gr.Audio(
                             sources=["upload", "microphone"],
                             type="filepath",
                             label="参照音声（アップロード / マイク録音）",
                         )
-                        _, clone_recording_script = _add_reference_recording_guide(open_default=True)
+                        _, clone_recording_script = _add_reference_recording_guide(open_default=False)
                         clone_history = gr.Dropdown(
                             choices=_list_voice_design_history(),
                             value=None,
@@ -4995,6 +5034,10 @@ def create_demo_interface(demo: VoxCPMDemo):
                         )
                         clone_history_refresh = gr.Button("履歴を更新", variant="secondary", size="sm")
                         with gr.Group(visible=False) as clone_qwen3_ref_text_group:
+                            gr.Markdown(
+                                "参照ファイルを使う場合は、そのファイルで実際に話している内容を入力してください。"
+                                "マイク録音で上の原稿を読んだ場合は、録音原稿をそのまま使えます。"
+                            )
                             clone_qwen3_ref_text = gr.Textbox(
                                 value="",
                                 label="参照音声の文字起こし（Qwen3-TTS用）",
@@ -5027,6 +5070,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 info="学習済みLoRAをIrodori-TTS推論に適用します。",
                             )
                             clone_irodori_lora_refresh = gr.Button("LoRA一覧を更新", variant="secondary", size="sm")
+                        _step_header(4, "生成設定", "読み上げテキスト、発話言語、声の指示、アクセント調整、読み方調整、保存ファイル名を設定します。")
                         clone_language = _language_dropdown()
                         clone_control = gr.Textbox(
                             value="自然で聞き取りやすく、落ち着いた話し方",
@@ -5053,6 +5097,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                             _add_prosody_controls(clone_text)
                         with gr.Group() as clone_advanced_group:
                             clone_denoise, clone_normalize, clone_cfg, clone_steps = _advanced_settings(include_denoise=True)
+                        _step_header(6, "生成", "参照音源と生成設定を確認して、この声で生成します。")
                         with gr.Row():
                             clone_btn = gr.Button("この声で生成", variant="primary", size="lg")
                             clone_stop_btn = gr.Button("停止", variant="stop")
@@ -5590,6 +5635,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 with gr.Group() as hifi_voxcpm_group:
                     with gr.Row():
                         with gr.Column():
+                            _step_header(3, "音源を選ぶ", "参照ファイルをアップロード、マイクで録音、または声のデザイン履歴から選びます。参照ファイルの場合は、その音声で話している内容を文字起こし欄に入力します。")
                             hifi_ref = gr.Audio(
                                 sources=["upload", "microphone"],
                                 type="filepath",
@@ -5602,8 +5648,9 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 info="参照音声をアップロードしていない場合、この履歴の声を使います。",
                             )
                             hifi_history_refresh = gr.Button("履歴を更新", variant="secondary", size="sm")
-                            _, hifi_recording_script = _add_reference_recording_guide(open_default=True)
+                            _, hifi_recording_script = _add_reference_recording_guide(open_default=False)
                             hifi_script_to_prompt_btn = gr.Button("録音原稿を文字起こし欄へ入れる", variant="secondary")
+                            _step_header(4, "生成設定", "参照音声の文字起こし、発話言語、続けて読み上げるテキスト、読み方調整、保存ファイル名を設定します。")
                             hifi_language = _language_dropdown()
                             hifi_prompt_text = gr.Textbox(
                                 value="",
@@ -5637,6 +5684,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                             )
                             _add_prosody_controls(hifi_text)
                             hifi_denoise, hifi_normalize, hifi_cfg, hifi_steps = _advanced_settings(include_denoise=True)
+                            _step_header(6, "生成", "参照音声と文字起こし、読み上げテキストを確認して高精度クローンを生成します。")
                             with gr.Row():
                                 hifi_btn = gr.Button("高精度クローンで生成", variant="primary", size="lg")
                                 hifi_stop_btn = gr.Button("停止", variant="stop")
