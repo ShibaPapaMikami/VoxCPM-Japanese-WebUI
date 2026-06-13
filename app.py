@@ -393,9 +393,39 @@ body,
 }
 .mic-record-actions {
     align-items: end !important;
+    gap: 0.55rem !important;
 }
 .mic-record-actions > * {
     min-width: 0 !important;
+}
+.gradio-container .mic-refresh-button,
+.gradio-container .mic-refresh-button button {
+    background: #f8fafc !important;
+    border: 1px solid var(--jp-border-strong) !important;
+    color: var(--jp-text) !important;
+    font-weight: 750 !important;
+}
+.gradio-container .record-start-button {
+    flex-grow: 1.35 !important;
+}
+.record-start-button,
+button.record-start-button,
+.gradio-container .record-start-button,
+.gradio-container .record-start-button button {
+    background: #0f766e !important;
+    background-color: #0f766e !important;
+    border: 1px solid #0f766e !important;
+    box-shadow: 0 8px 18px rgba(15, 118, 110, 0.18) !important;
+    color: #ffffff !important;
+    font-weight: 850 !important;
+}
+.record-start-button:hover,
+button.record-start-button:hover,
+.gradio-container .record-start-button:hover,
+.gradio-container .record-start-button button:hover {
+    background: #0d9488 !important;
+    background-color: #0d9488 !important;
+    border-color: #0d9488 !important;
 }
 .mic-record-panel .audio-container {
     min-height: 0 !important;
@@ -3805,7 +3835,7 @@ def create_demo_interface(demo: VoxCPMDemo):
 
     def _microphone_dependency_message() -> str:
         return (
-            "Windowsマイク録音を使うには `sounddevice` が必要です。"
+            "マイク録音を使うには `sounddevice` が必要です。"
             "未導入の場合は `.\\.venv\\Scripts\\python.exe -m pip install sounddevice` を実行してください。"
         )
 
@@ -3858,7 +3888,7 @@ def create_demo_interface(demo: VoxCPMDemo):
     def _parse_microphone_device_index(device_label: str) -> int:
         match = re.match(r"\s*(\d+)\s*:", device_label or "")
         if not match:
-            raise ValueError("録音に使うWindowsマイクを選択してください。")
+            raise ValueError("録音に使うマイクを選択してください。")
         return int(match.group(1))
 
     def _record_windows_microphone(device_label: str, duration_seconds: float):
@@ -3877,7 +3907,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             audio = sd.rec(frames, samplerate=samplerate, channels=1, dtype="float32", device=device_index)
             sd.wait()
         except Exception as exc:
-            return gr.update(), f"Windowsマイク録音に失敗しました: {exc}"
+            return gr.update(), f"マイク録音に失敗しました: {exc}"
 
         if audio is None or len(audio) == 0:
             return gr.update(), "録音データが空でした。マイク入力と録音秒数を確認してください。"
@@ -5193,8 +5223,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                             clone_mic_device = gr.Dropdown(
                                 choices=clone_mic_choices,
                                 value=clone_mic_value,
-                                label="Windowsマイク",
-                                info="ブラウザでマイクが見つからない場合も、Windowsの入力デバイスから直接録音できます。",
+                                label="マイク入力",
+                                info="ブラウザでマイクが見つからない場合も、OSの入力デバイスから直接録音できます。",
                             )
                             clone_record_seconds = gr.Slider(
                                 minimum=3,
@@ -5204,8 +5234,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 label="録音秒数",
                             )
                             with gr.Row(equal_height=True, elem_classes=["mic-record-actions"]):
-                                clone_mic_refresh = gr.Button("マイク一覧を更新", variant="secondary")
-                                clone_server_record_btn = gr.Button("Windowsマイクで録音", variant="primary")
+                                clone_mic_refresh = gr.Button("マイク一覧を更新", variant="secondary", elem_classes=["mic-refresh-button"])
+                                clone_server_record_btn = gr.Button("マイクで録音開始", variant="primary", elem_classes=["record-start-button"])
                             clone_server_record_status = gr.Markdown(clone_mic_status_text)
                             clone_record_ref = gr.Audio(
                                 type="filepath",
@@ -5868,8 +5898,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 hifi_mic_device = gr.Dropdown(
                                     choices=hifi_mic_choices,
                                     value=hifi_mic_value,
-                                    label="Windowsマイク",
-                                    info="ブラウザでマイクが見つからない場合も、Windowsの入力デバイスから直接録音できます。",
+                                    label="マイク入力",
+                                    info="ブラウザでマイクが見つからない場合も、OSの入力デバイスから直接録音できます。",
                                 )
                                 hifi_record_seconds = gr.Slider(
                                     minimum=3,
@@ -5879,8 +5909,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                                     label="録音秒数",
                                 )
                                 with gr.Row(equal_height=True, elem_classes=["mic-record-actions"]):
-                                    hifi_mic_refresh = gr.Button("マイク一覧を更新", variant="secondary")
-                                    hifi_server_record_btn = gr.Button("Windowsマイクで録音", variant="primary")
+                                    hifi_mic_refresh = gr.Button("マイク一覧を更新", variant="secondary", elem_classes=["mic-refresh-button"])
+                                    hifi_server_record_btn = gr.Button("マイクで録音開始", variant="primary", elem_classes=["record-start-button"])
                                 hifi_server_record_status = gr.Markdown(hifi_mic_status_text)
                                 hifi_record_ref = gr.Audio(
                                     type="filepath",
