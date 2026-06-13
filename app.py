@@ -385,6 +385,21 @@ body,
     padding-left: 0.45rem !important;
     padding-right: 0.45rem !important;
 }
+.mic-record-panel {
+    margin-top: 0.75rem;
+}
+.mic-record-panel button {
+    min-height: 2.7rem !important;
+}
+.mic-record-actions {
+    align-items: end !important;
+}
+.mic-record-actions > * {
+    min-width: 0 !important;
+}
+.mic-record-panel .audio-container {
+    min-height: 0 !important;
+}
 .mode-heading {
     border-top: 1px solid var(--jp-border);
     margin: 1.1rem 0 0.55rem 0;
@@ -3411,7 +3426,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             gr.update(value=None),  # design_reuse_output
             gr.update(value=None),  # design_reuse_file
             gr.update(value=None),  # clone_ref
-            gr.update(value=None),  # clone_record_ref
+            gr.update(value=None, visible=False),  # clone_record_ref
             gr.update(value=""),  # clone_server_record_status
             gr.update(value=None),  # clone_history
             gr.update(value=""),  # clone_qwen3_ref_text
@@ -3431,7 +3446,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             gr.update(value=None),  # clone_lora_lab_text_file
             gr.update(value=None),  # clone_lora_jsonl_file
             gr.update(value=None),  # hifi_ref
-            gr.update(value=None),  # hifi_record_ref
+            gr.update(value=None, visible=False),  # hifi_record_ref
             gr.update(value=""),  # hifi_server_record_status
             gr.update(value=None),  # hifi_history
             gr.update(value=""),  # hifi_prompt_text
@@ -3873,7 +3888,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         except Exception as exc:
             return gr.update(), f"録音WAVの保存に失敗しました: {exc}"
 
-        return str(output_path), f"録音しました: {output_path.name}"
+        return gr.update(value=str(output_path), visible=True), f"録音しました: {output_path.name}"
 
     def _generate_from_design_history(
         engine_label: str,
@@ -5173,7 +5188,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 type="filepath",
                                 label="参照ファイル",
                             )
-                        with gr.Group(visible=False) as clone_record_group:
+                        with gr.Group(visible=False, elem_classes=["mic-record-panel"]) as clone_record_group:
                             clone_mic_choices, clone_mic_value, clone_mic_status_text = _microphone_device_choices()
                             clone_mic_device = gr.Dropdown(
                                 choices=clone_mic_choices,
@@ -5181,21 +5196,22 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 label="Windowsマイク",
                                 info="ブラウザでマイクが見つからない場合も、Windowsの入力デバイスから直接録音できます。",
                             )
-                            with gr.Row():
-                                clone_record_seconds = gr.Slider(
-                                    minimum=3,
-                                    maximum=60,
-                                    value=12,
-                                    step=1,
-                                    label="録音秒数",
-                                )
+                            clone_record_seconds = gr.Slider(
+                                minimum=3,
+                                maximum=60,
+                                value=12,
+                                step=1,
+                                label="録音秒数",
+                            )
+                            with gr.Row(equal_height=True, elem_classes=["mic-record-actions"]):
                                 clone_mic_refresh = gr.Button("マイク一覧を更新", variant="secondary")
-                            clone_server_record_btn = gr.Button("Windowsマイクで録音", variant="primary")
+                                clone_server_record_btn = gr.Button("Windowsマイクで録音", variant="primary")
                             clone_server_record_status = gr.Markdown(clone_mic_status_text)
                             clone_record_ref = gr.Audio(
-                                sources=["upload"],
                                 type="filepath",
-                                label="録音結果 / WAV参照",
+                                label="録音結果",
+                                interactive=False,
+                                visible=False,
                             )
                             _, clone_recording_script = _add_reference_recording_guide(open_default=False)
                         with gr.Group(visible=False) as clone_history_group:
@@ -5847,7 +5863,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                                     type="filepath",
                                     label="参照ファイル",
                                 )
-                            with gr.Group(visible=False) as hifi_record_group:
+                            with gr.Group(visible=False, elem_classes=["mic-record-panel"]) as hifi_record_group:
                                 hifi_mic_choices, hifi_mic_value, hifi_mic_status_text = _microphone_device_choices()
                                 hifi_mic_device = gr.Dropdown(
                                     choices=hifi_mic_choices,
@@ -5855,21 +5871,22 @@ def create_demo_interface(demo: VoxCPMDemo):
                                     label="Windowsマイク",
                                     info="ブラウザでマイクが見つからない場合も、Windowsの入力デバイスから直接録音できます。",
                                 )
-                                with gr.Row():
-                                    hifi_record_seconds = gr.Slider(
-                                        minimum=3,
-                                        maximum=60,
-                                        value=12,
-                                        step=1,
-                                        label="録音秒数",
-                                    )
+                                hifi_record_seconds = gr.Slider(
+                                    minimum=3,
+                                    maximum=60,
+                                    value=12,
+                                    step=1,
+                                    label="録音秒数",
+                                )
+                                with gr.Row(equal_height=True, elem_classes=["mic-record-actions"]):
                                     hifi_mic_refresh = gr.Button("マイク一覧を更新", variant="secondary")
-                                hifi_server_record_btn = gr.Button("Windowsマイクで録音", variant="primary")
+                                    hifi_server_record_btn = gr.Button("Windowsマイクで録音", variant="primary")
                                 hifi_server_record_status = gr.Markdown(hifi_mic_status_text)
                                 hifi_record_ref = gr.Audio(
-                                    sources=["upload"],
                                     type="filepath",
-                                    label="録音結果 / WAV参照",
+                                    label="録音結果",
+                                    interactive=False,
+                                    visible=False,
                                 )
                                 _, hifi_recording_script = _add_reference_recording_guide(open_default=False)
                                 hifi_script_to_prompt_btn = gr.Button("録音原稿を文字起こし欄へ入れる", variant="secondary")
