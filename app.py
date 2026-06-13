@@ -3983,7 +3983,7 @@ def create_demo_interface(demo: VoxCPMDemo):
         duration = max(1.0, min(float(duration_seconds or 10), 120.0))
         microphone_recording_state["stop_requested"] = False
         return (
-            gr.update(value=None, visible=True),
+            gr.update(value=None, visible=False),
             _recording_progress_html(duration),
             gr.update(visible=False),
             gr.update(visible=True),
