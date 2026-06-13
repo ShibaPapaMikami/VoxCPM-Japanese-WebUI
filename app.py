@@ -430,6 +430,67 @@ button.record-start-button:hover,
 .mic-record-panel .audio-container {
     min-height: 0 !important;
 }
+.recording-progress {
+    background: #f8fbff;
+    border: 1px solid var(--jp-border-strong);
+    border-radius: 8px;
+    color: var(--jp-text);
+    margin: 0.4rem 0 0.55rem 0;
+    padding: 0.7rem 0.8rem;
+}
+.recording-progress__head,
+.recording-progress__scale {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+.recording-progress__title {
+    align-items: center;
+    display: inline-flex;
+    gap: 0.45rem;
+    font-weight: 850;
+}
+.recording-progress__dot {
+    animation: recording-pulse 1s ease-in-out infinite;
+    background: #ef4444;
+    border-radius: 999px;
+    display: inline-block;
+    height: 0.62rem;
+    width: 0.62rem;
+}
+.recording-progress__duration {
+    color: var(--jp-muted);
+    font-weight: 750;
+    white-space: nowrap;
+}
+.recording-progress__bar {
+    background: #dbe7f5;
+    border-radius: 999px;
+    height: 0.62rem;
+    margin: 0.55rem 0 0.25rem 0;
+    overflow: hidden;
+}
+.recording-progress__fill {
+    animation: recording-fill var(--record-duration, 10s) linear forwards;
+    background: linear-gradient(90deg, #0f766e, #22c55e);
+    border-radius: inherit;
+    display: block;
+    height: 100%;
+    width: 0%;
+}
+.recording-progress__scale {
+    color: var(--jp-muted);
+    font-size: 0.82rem;
+}
+@keyframes recording-fill {
+    from { width: 0%; }
+    to { width: 100%; }
+}
+@keyframes recording-pulse {
+    0%, 100% { opacity: 0.45; transform: scale(0.9); }
+    50% { opacity: 1; transform: scale(1); }
+}
 .mode-heading {
     border-top: 1px solid var(--jp-border);
     margin: 1.1rem 0 0.55rem 0;
@@ -3893,11 +3954,32 @@ def create_demo_interface(demo: VoxCPMDemo):
             raise ValueError("録音に使うマイクを選択してください。")
         return int(match.group(1))
 
+    def _recording_progress_html(duration_seconds: float) -> str:
+        duration = int(round(max(1.0, min(float(duration_seconds or 10), 120.0))))
+        return (
+            f'<div class="recording-progress" style="--record-duration: {duration}s;">'
+            '<div class="recording-progress__head">'
+            '<span class="recording-progress__title">'
+            '<span class="recording-progress__dot"></span>'
+            '録音中'
+            '</span>'
+            f'<span class="recording-progress__duration">{duration}秒録音</span>'
+            '</div>'
+            '<div class="recording-progress__bar">'
+            '<span class="recording-progress__fill"></span>'
+            '</div>'
+            '<div class="recording-progress__scale">'
+            '<span>0秒</span>'
+            f'<span>{duration}秒</span>'
+            '</div>'
+            '</div>'
+        )
+
     def _prepare_microphone_recording(duration_seconds: float):
         duration = max(1.0, min(float(duration_seconds or 10), 120.0))
         return (
             gr.update(value=None, visible=True),
-            f"**録音中です。約 {duration:.0f} 秒、そのままお待ちください。**",
+            _recording_progress_html(duration),
             gr.update(visible=False),
         )
 
