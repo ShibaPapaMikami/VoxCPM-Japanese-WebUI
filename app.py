@@ -364,14 +364,8 @@ body,
     z-index: 1;
 }
 .gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label.selected::after {
-    background: #ffffff;
-    border-radius: 999px;
-    bottom: 0.25rem;
-    content: "";
-    height: 3px;
-    left: 20%;
-    position: absolute;
-    right: 20%;
+    content: none !important;
+    display: none !important;
 }
 .gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label.selected span,
 .gradio-container fieldset.engine-tabs > .wrap:not([data-testid="status-tracker"]) label.selected * {
@@ -410,6 +404,30 @@ body,
     color: var(--jp-muted);
     font-size: 0.86rem;
     margin-top: 0.15rem;
+}
+.source-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+    gap: 0.5rem;
+    margin: 0.35rem 0 0.8rem 0;
+}
+.source-option {
+    background: #ffffff;
+    border: 1px solid var(--jp-border);
+    border-radius: 8px;
+    padding: 0.7rem 0.75rem;
+}
+.source-option strong {
+    display: block;
+    color: var(--jp-text);
+    font-size: 0.9rem;
+}
+.source-option span {
+    display: block;
+    color: var(--jp-muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
+    margin-top: 0.2rem;
 }
 .gradio-container .mode-tabs.tabs {
     gap: 0.7rem;
@@ -450,7 +468,7 @@ body,
     background: var(--jp-accent) !important;
     color: #ffffff !important;
     border-color: var(--jp-accent) !important;
-    box-shadow: inset 0 -3px 0 #ffffff, 0 1px 4px rgba(37, 99, 235, 0.16);
+    box-shadow: 0 1px 4px rgba(37, 99, 235, 0.16);
     z-index: 1;
 }
 .gradio-container .mode-tabs button[role="tab"][aria-selected="true"] * {
@@ -4485,6 +4503,20 @@ def create_demo_interface(demo: VoxCPMDemo):
             '</div>'
         )
 
+    def _source_option_cards(transcript_note: str = ""):
+        note = f"<span>{html.escape(transcript_note)}</span>" if transcript_note else ""
+        gr.HTML(
+            '<div class="source-options">'
+            '<div class="source-option"><strong>参照ファイル</strong><span>手元のWAVなどをアップロードします。'
+            '必要な場合は、ファイル内で話している内容を文字起こし欄に入力します。</span></div>'
+            '<div class="source-option"><strong>マイク録音</strong><span>その場で声を録音します。'
+            '録音原稿を使う場合は下の折りたたみを開きます。</span></div>'
+            '<div class="source-option"><strong>履歴から選択</strong><span>声のデザイン履歴に保存された声を使います。'
+            '履歴に文字起こしがある場合は自動利用できます。</span>'
+            f'{note}</div>'
+            '</div>'
+        )
+
     _RECORDING_SCRIPT_PRESETS = {
         "落ち着いたナレーション": (
             "こんにちは。今日は音声生成のための参照音声を録音しています。"
@@ -4705,12 +4737,6 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 design_gacha_file_3 = gr.File(label="候補 3 WAV", interactive=False, visible=False)
                                 design_gacha_audio_4 = gr.Audio(label="候補 4", visible=False)
                                 design_gacha_file_4 = gr.File(label="候補 4 WAV", interactive=False, visible=False)
-                        gr.Markdown(
-                            "**使い方**\n\n"
-                            "1. 表示されている項目で、声質や話し方を指定します。\n"
-                            "2. 読み上げたい文章を入力します。\n"
-                            "3. 表示されている生成ボタンを押します。"
-                        )
                         with gr.Accordion("声のデザイン履歴から再利用", open=True):
                             gr.Markdown(
                                 "声のデザインで生成した音声を参照音声として使い、"
@@ -5019,7 +5045,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                 )
                 with gr.Row():
                     with gr.Column():
-                        _step_header(3, "音源を選ぶ", "参照ファイルをアップロード、マイクで録音、または声のデザイン履歴から選びます。Qwen3-TTSでは参照音声で話している内容の入力が必要です。")
+                        _step_header(3, "音源を選ぶ", "使う音源の入口を1つ選びます。")
+                        _source_option_cards("Qwen3-TTSでは参照音声で話している内容の入力が必要です。")
                         clone_ref = gr.Audio(
                             sources=["upload", "microphone"],
                             type="filepath",
@@ -5370,13 +5397,6 @@ def create_demo_interface(demo: VoxCPMDemo):
                                 interactive=False,
                                 lines=10,
                             )
-                        gr.Markdown(
-                            "**使い方**\n\n"
-                            "1. クローンしたい声の音声をアップロードするか、声のデザイン履歴から選びます。\n"
-                            "2. 表示されている追加項目を入力します。Qwen3-TTSでは参照音声の文字起こしが必要です。\n"
-                            "3. 読み上げテキストを入力して生成します。"
-                        )
-
                 clone_event = clone_btn.click(
                     fn=_generate_clone,
                     inputs=[
@@ -5635,7 +5655,8 @@ def create_demo_interface(demo: VoxCPMDemo):
                 with gr.Group() as hifi_voxcpm_group:
                     with gr.Row():
                         with gr.Column():
-                            _step_header(3, "音源を選ぶ", "参照ファイルをアップロード、マイクで録音、または声のデザイン履歴から選びます。参照ファイルの場合は、その音声で話している内容を文字起こし欄に入力します。")
+                            _step_header(3, "音源を選ぶ", "使う音源の入口を1つ選びます。")
+                            _source_option_cards("精密では参照音声で話している内容の文字起こしが重要です。")
                             hifi_ref = gr.Audio(
                                 sources=["upload", "microphone"],
                                 type="filepath",
@@ -5709,17 +5730,6 @@ def create_demo_interface(demo: VoxCPMDemo):
                             )
                             hifi_history_delete = gr.Button("選択した履歴を削除", variant="stop", size="sm")
                             hifi_history_status = gr.Markdown("")
-                            gr.Markdown(
-                                "**使い方**\n\n"
-                                "1. 参照音声をアップロードするか、声のデザイン履歴から選びます。\n"
-                                "2. 参照音声の文字起こしを入力または貼り付けます。自動文字起こしも試せます。\n"
-                                "3. 続けて読み上げたい文章を入力して生成します。\n\n"
-                                "英語など不要な言葉が冒頭に入る場合は、推奨設定のまま生成してください。"
-                                "文字起こしを厳密に使いたい場合だけ、冒頭防止をオフにします。"
-                                "読み方の調整は、読み上げテキスト内の記号で行ってください。"
-                                "参照音声の文字起こしが間違っていると、生成冒頭に不要な言葉が混ざることがあります。"
-                            )
-
                 hifi_transcribe_event = hifi_transcribe_btn.click(
                     fn=_transcribe_reference,
                     inputs=[hifi_ref, hifi_history],
